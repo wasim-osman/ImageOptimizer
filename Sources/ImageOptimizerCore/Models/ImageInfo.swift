@@ -35,6 +35,8 @@ public struct ImageInfo: Sendable, Codable, Equatable {
     public var frameCount: Int
     /// iPhone HDR photos carry a gain map ImageIO cannot carry across a re-encode.
     public var hasGainMap: Bool
+    /// Portrait-mode photos carry a depth/disparity map that a re-encode would silently delete.
+    public var hasDepthData: Bool
     public var fileSize: Int64
 
     public init(
@@ -48,6 +50,7 @@ public struct ImageInfo: Sendable, Codable, Equatable {
         iccProfileName: String? = nil,
         frameCount: Int = 1,
         hasGainMap: Bool = false,
+        hasDepthData: Bool = false,
         fileSize: Int64
     ) {
         self.format = format
@@ -60,6 +63,7 @@ public struct ImageInfo: Sendable, Codable, Equatable {
         self.iccProfileName = iccProfileName
         self.frameCount = frameCount
         self.hasGainMap = hasGainMap
+        self.hasDepthData = hasDepthData
         self.fileSize = fileSize
     }
 

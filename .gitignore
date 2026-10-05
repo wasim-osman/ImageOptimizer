@@ -10,3 +10,6 @@ dist/
 *.heic
 *.heif
 *.ppm
+
+# Staged encoder binaries (built by scripts/)
+.tools/

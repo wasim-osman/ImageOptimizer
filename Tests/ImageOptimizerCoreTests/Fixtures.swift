@@ -54,6 +54,26 @@ enum Fixtures {
         return ctx.makeImage()!
     }
 
+    /// A screenshot/UI-like image: flat panels, a gradient bar, thin lines, no noise. This is what
+    /// real PNGs usually are (the benchmark's median real PNG shrank to 36%); photographic noise is
+    /// the pathological case for a palette, so it must not stand in for typical use.
+    static func uiLike(width: Int = 640, height: Int = 400,
+                       colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!) -> CGImage {
+        var px = [UInt8](repeating: 255, count: width * height * 4)
+        func set(_ x: Int, _ y: Int, _ r: UInt8, _ g: UInt8, _ b: UInt8) {
+            guard x >= 0, x < width, y >= 0, y < height else { return }
+            let i = (y * width + x) * 4; px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255
+        }
+        for y in 0..<height { for x in 0..<width { set(x, y, 244, 245, 248) } }                 // page
+        for y in 20..<80 { for x in 20..<(width - 20) { set(x, y, 52, 120, 246) } }             // header
+        for y in 100..<(height - 20) { for x in 20..<220 { set(x, y, 255, 255, 255) } }          // card
+        for y in 300..<340 { for x in 40..<(width - 40) { let v = UInt8(Double(x - 40) / Double(width - 80) * 255); set(x, y, v, 120, 255 - v) } }
+        for x in 0..<width { set(x, 90, 200, 200, 205); set(x, 91, 200, 200, 205) }              // rule
+        let ctx = CGContext(data: &px, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        return ctx.makeImage()!
+    }
+
     /// Four coloured corners on grey. Non-square on purpose: it makes an axis swap visible.
     /// top-left red, top-right green, bottom-left blue, bottom-right yellow.
     static func cornerMarkers(width: Int = 96, height: Int = 48) -> CGImage {
@@ -133,4 +153,82 @@ enum Fixtures {
                                   space: CGColorSpaceCreateDeviceCMYK(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
         return ctx.makeImage()
     }
+}
+
+// MARK: - Metadata fixtures and viewer-side pixels
+
+extension Fixtures {
+    /// Writes an image carrying the metadata a phone camera would: capture time, camera model,
+    /// and a GPS location. Used to check that the metadata policy really strips them.
+    @discardableResult
+    static func writeWithCameraMetadata(_ image: CGImage, to url: URL, type: UTType,
+                                        quality: Double = 0.9, orientation: Int? = nil) throws -> URL {
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "Fixtures", code: 1)
+        }
+        var props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: quality,
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: "2026:01:02 03:04:05",
+                kCGImagePropertyExifLensModel: "Test Lens 1.0",
+            ],
+            kCGImagePropertyTIFFDictionary: [
+                kCGImagePropertyTIFFMake: "TestCam",
+                kCGImagePropertyTIFFModel: "Model Z",
+            ],
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 43.6532, kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 79.3832, kCGImagePropertyGPSLongitudeRef: "W",
+            ],
+        ]
+        if let orientation { props[kCGImagePropertyOrientation] = orientation }
+        CGImageDestinationAddImage(dest, image, props as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { throw NSError(domain: "Fixtures", code: 2) }
+        return url
+    }
+
+    /// What a viewer shows: orientation applied, colour-managed into sRGB, as 8-bit RGBA.
+    /// Comparing these is the honest test that an optimised image still LOOKS the same.
+    static func viewerPixels(_ url: URL) -> (width: Int, height: Int, rgba: [UInt8])? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: max(w, h),
+              ] as CFDictionary) else { return nil }
+        let width = image.width, height = image.height
+        var buf = [UInt8](repeating: 0, count: width * height * 4)
+        let ok = buf.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return ok ? (width, height, buf) : nil
+    }
+
+    /// Mean absolute difference per colour channel (0-255) between two same-size RGBA buffers.
+    static func meanDifference(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        precondition(a.count == b.count)
+        var sum = 0.0
+        var n = 0
+        for i in stride(from: 0, to: a.count, by: 4) {
+            for c in 0..<3 { sum += Double(abs(Int(a[i + c]) - Int(b[i + c]))); n += 1 }
+        }
+        return n == 0 ? 0 : sum / Double(n)
+    }
+
+    static func properties(_ url: URL) -> [CFString: Any] {
+        guard let s = CGImageSourceCreateWithURL(url as CFURL, nil) else { return [:] }
+        return (CGImageSourceCopyPropertiesAtIndex(s, 0, nil) as? [CFString: Any]) ?? [:]
+    }
+}
+
+/// Tests that need the real encoders skip themselves when `.tools/bin` hasn't been staged.
+enum Requirements {
+    static let jpegli = ToolLocator.url(for: .cjpegli) != nil
+    static let png = ToolLocator.url(for: .oxipng) != nil && ToolLocator.url(for: .pngquant) != nil
 }

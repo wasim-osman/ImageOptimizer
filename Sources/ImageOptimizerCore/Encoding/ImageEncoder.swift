@@ -1,0 +1,183 @@
+// ImageEncoder.swift - Runs an ImagePlan's steps and leaves the result at `partURL`.
+
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+
+public enum EncodeError: LocalizedError, Sendable, Equatable {
+    case toolMissing(String)
+    case toolFailed(tool: String, message: String)
+    case decodeFailed(String)
+    case encodeFailed(String)
+    case cancelled
+
+    public var errorDescription: String? {
+        switch self {
+        case .toolMissing(let t): return "The \(t) encoder is missing from this install."
+        case .toolFailed(let tool, let message):
+            return "\(tool) failed" + (message.isEmpty ? "." : ": \(message)")
+        case .decodeFailed(let why): return "Couldn't decode the image: \(why)"
+        case .encodeFailed(let why): return "Couldn't encode the image: \(why)"
+        case .cancelled: return "Cancelled."
+        }
+    }
+}
+
+public struct EncodeReport: Sendable, Equatable {
+    /// Human-readable notes about what actually happened, e.g. a step that was skipped.
+    public var notes: [String] = []
+}
+
+public struct ImageEncoder: Sendable {
+    public init() {}
+
+    /// Runs every step, writing the final result to `partURL`. Intermediate files live in a temp
+    /// directory that is always removed. Throws `EncodeError.cancelled` if the task is cancelled.
+    public func encode(
+        plan: ImagePlan,
+        info: ImageInfo,
+        to partURL: URL,
+        onProgress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> EncodeReport {
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("ImageOptimizer-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        var report = EncodeReport()
+        var current = plan.inputURL
+        for (index, step) in plan.steps.enumerated() {
+            try Task.checkCancellation(or: EncodeError.cancelled)
+            let isLast = index == plan.steps.count - 1
+            let destination = isLast ? partURL : work.appendingPathComponent("step\(index).\(plan.inputURL.pathExtension)")
+            switch step {
+            case .jpegli(let distance, let chroma):
+                try await runJPEGLI(input: plan.inputURL, info: info, distance: distance, chroma: chroma,
+                                    output: destination, work: work)
+                current = destination
+            case .pngquant(let lo, let hi, let speed):
+                let result = try await runPNGQuant(input: current, output: destination, minQuality: lo, maxQuality: hi, speed: speed)
+                if let note = result.note { report.notes.append(note) }
+                if result.produced { current = destination }
+            case .oxipng(let level):
+                try await runOxipng(input: current, output: destination, level: level)
+                current = destination
+            case .heic(let quality):
+                try await runHEIC(input: plan.inputURL, output: destination, quality: quality, orientation: info.orientation)
+                current = destination
+            }
+            onProgress?(Double(index + 1) / Double(plan.steps.count))
+        }
+        // pngquant skipped and nothing after it wrote the file: copy the input through so the
+        // caller always finds a result at partURL.
+        if current != partURL, !FileManager.default.fileExists(atPath: partURL.path) {
+            try FileManager.default.copyItem(at: current, to: partURL)
+        }
+        return report
+    }
+
+    // MARK: - JPEG (jpegli)
+
+    private func runJPEGLI(input: URL, info: ImageInfo, distance: Double, chroma: String?,
+                           output: URL, work: URL) async throws {
+        guard let tool = ToolLocator.url(for: .cjpegli) else { throw EncodeError.toolMissing("cjpegli") }
+        // Decoding is CPU-heavy; keep it off the cooperative pool so other jobs aren't starved.
+        let pixels = try await Task.detached(priority: .utility) { try PixelExtractor.extract(url: input, info: info) }.value
+        try Task.checkCancellation(or: EncodeError.cancelled)
+
+        var args = ["-", output.path, "-d", String(format: "%.2f", distance), "-p", "2"]
+        if let chroma { args += ["--chroma_subsampling=\(chroma)"] }
+        if let icc = pixels.iccProfile {
+            let iccURL = work.appendingPathComponent("profile.icc")
+            try icc.write(to: iccURL)
+            args += ["-x", "icc_pathname=\(iccURL.path)"]
+        }
+        let result = await ProcessRunner.run(tool, arguments: args) { handle in
+            try handle.write(contentsOf: pixels.pnmHeader)
+            // Stream in chunks so a 100 MB image isn't copied again into one giant Data.
+            let chunk = 1 << 20
+            var offset = 0
+            while offset < pixels.bytes.count {
+                let end = min(offset + chunk, pixels.bytes.count)
+                try handle.write(contentsOf: Data(pixels.bytes[offset..<end]))
+                offset = end
+            }
+        }
+        try throwIfFailed(result, tool: "cjpegli")
+    }
+
+    // MARK: - PNG (pngquant, oxipng)
+
+    private struct QuantResult { var produced: Bool; var note: String? }
+
+    private func runPNGQuant(input: URL, output: URL, minQuality: Int, maxQuality: Int, speed: Int) async throws -> QuantResult {
+        guard let tool = ToolLocator.url(for: .pngquant) else { throw EncodeError.toolMissing("pngquant") }
+        let args = ["--quality", "\(minQuality)-\(maxQuality)", "--speed", "\(speed)", "--strip", "--force",
+                    "--skip-if-larger", "--output", output.path, "--", input.path]
+        let result = await ProcessRunner.run(tool, arguments: args)
+        if result.wasCancelled { throw EncodeError.cancelled }
+        switch result.exitCode {
+        case 0: return QuantResult(produced: true, note: nil)
+        case 98: return QuantResult(produced: false, note: "Palette reduction wouldn't have made this PNG smaller, so it was left lossless.")
+        case 99: return QuantResult(produced: false, note: "Palette reduction would have visibly changed this PNG, so it was left lossless.")
+        default: throw EncodeError.toolFailed(tool: "pngquant", message: clean(result.stderr))
+        }
+    }
+
+    private func runOxipng(input: URL, output: URL, level: Int) async throws {
+        guard let tool = ToolLocator.url(for: .oxipng) else { throw EncodeError.toolMissing("oxipng") }
+        // `--strip safe` keeps the colour profile; `--strip all` would shift colours (measured).
+        // `--force` writes even when the result isn't smaller, so the caller's guard decides.
+        let args = ["-o", "\(level)", "--strip", "safe", "--threads", "2", "--force", "--out", output.path, input.path]
+        let result = await ProcessRunner.run(tool, arguments: args)
+        try throwIfFailed(result, tool: "oxipng")
+    }
+
+    // MARK: - HEIC (Apple, in-process)
+
+    private func runHEIC(input: URL, output: URL, quality: Double, orientation: Int) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .utility).async {
+                guard let source = CGImageSourceCreateWithURL(input as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                      let dest = CGImageDestinationCreateWithURL(output as CFURL, UTType.heic.identifier as CFString, 1, nil) else {
+                    continuation.resume(throwing: EncodeError.encodeFailed("couldn't open the HEIC"))
+                    return
+                }
+                // Encode the decoded STORED pixels as a bare image and pass the orientation
+                // explicitly. Measured: this drops GPS, capture time and camera model, keeps the
+                // orientation and the colour profile, and leaves the stored pixels unrotated.
+                // (Copying from the source instead keeps everything except GPS, which breaks the
+                // "essentials only" metadata rule; omitting the orientation turns photos sideways.)
+                let options: [CFString: Any] = [
+                    kCGImageDestinationLossyCompressionQuality: quality,
+                    kCGImagePropertyOrientation: orientation,
+                ]
+                CGImageDestinationAddImage(dest, image, options as CFDictionary)
+                if CGImageDestinationFinalize(dest) {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: EncodeError.encodeFailed("the HEIC encoder reported a failure"))
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func throwIfFailed(_ result: ProcessResult, tool: String) throws {
+        if result.wasCancelled { throw EncodeError.cancelled }
+        guard result.exitCode == 0 else { throw EncodeError.toolFailed(tool: tool, message: clean(result.stderr)) }
+    }
+
+    private func clean(_ stderr: String) -> String {
+        let line = stderr.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+        return line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+extension Task where Success == Never, Failure == Never {
+    /// Throws `error` instead of CancellationError, so callers see one cancellation type.
+    static func checkCancellation(or error: Error) throws {
+        if Task.isCancelled { throw error }
+    }
+}

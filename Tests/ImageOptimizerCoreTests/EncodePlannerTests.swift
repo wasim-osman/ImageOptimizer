@@ -179,3 +179,17 @@ struct EncodePlannerTests {
         #expect(p.outputURL.standardizedFileURL != source.standardizedFileURL)
     }
 }
+
+@Suite("EncodePlanner: portrait depth")
+struct DepthRefusalTests {
+    @Test("a portrait (depth) photo is refused as unsupported, even when forced")
+    func depthRefused() {
+        var info = ImageInfo(format: .heic, width: 4000, height: 3000, fileSize: 4_000_000)
+        info.hasDepthData = true
+        for force in [false, true] {
+            let p = EncodePlanner().plan(info: info, inputURL: URL(fileURLWithPath: "/tmp/p.heic"), settings: Settings(), forceEncode: force)
+            guard case .refused(.unsupported(let why)) = p.outcome else { Issue.record("force=\(force): expected unsupported"); continue }
+            #expect(why.contains("depth"))
+        }
+    }
+}

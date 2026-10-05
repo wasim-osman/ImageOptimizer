@@ -17,7 +17,10 @@ set -euo pipefail
 
 # jpegli has no release tags; pin the exact commit that was benchmarked and verified.
 JPEGLI_COMMIT="031a0077f5799a6041004267fc12b956c1f52a20"
-OUT="${1:?usage: build-jpegli.sh <output-dir>}"
+# Resolve to an absolute path NOW: the build below changes directory, and a relative path
+# would silently resolve inside the temp directory that is deleted on exit.
+mkdir -p "${1:?usage: build-jpegli.sh <output-dir>}"
+OUT="$(cd "$1" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -45,9 +48,9 @@ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTIN
 echo "==> Building"
 ninja -j "$(sysctl -n hw.ncpu)" tools/cjpegli tools/djpegli > build.log
 
-mkdir -p "$OUT"
 cp tools/cjpegli tools/djpegli "$OUT/"
 cp "$WORK/jpegli/LICENSE" "$OUT/LICENSE.jpegli"
+[ -x "$OUT/cjpegli" ] || { echo "cjpegli was not written to $OUT"; exit 1; }
 
 echo "==> Verifying the result is genuinely self-contained"
 BAD="$(otool -L "$OUT/cjpegli" | tail -n +2 | grep -v -E '^\s+(/usr/lib/|/System/)' || true)"

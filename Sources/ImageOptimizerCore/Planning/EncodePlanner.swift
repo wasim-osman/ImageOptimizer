@@ -10,7 +10,7 @@ public enum EncodeStep: Sendable, Equatable {
     case pngquant(minQuality: Int, maxQuality: Int, speed: Int)
     /// oxipng lossless recompression. Always `--strip safe`, which keeps the colour profile.
     case oxipng(level: Int)
-    /// Apple's HEVC encoder, copying from the source image so orientation and profile survive.
+    /// Apple's HEVC encoder, in-process. Orientation and colour profile are carried across.
     case heic(quality: Double)
 }
 
@@ -71,6 +71,9 @@ public struct EncodePlanner: Sendable {
         }
         if info.hasGainMap {
             return refused(.unsupported("HDR photos aren't supported yet — re-encoding would silently remove the HDR (gain map)."))
+        }
+        if info.hasDepthData {
+            return refused(.unsupported("Portrait photos aren't supported yet — re-encoding would delete the depth data Photos uses for portrait editing."))
         }
         if info.megapixels > Self.maximumMegapixels {
             return refused(.unsupported("This image is \(Int(info.megapixels)) megapixels — too large to process safely."))

@@ -76,8 +76,14 @@ public enum ImageProbe {
             iccProfileName: props[kCGImagePropertyProfileName] as? String,
             frameCount: CGImageSourceGetCount(source),
             hasGainMap: hasGainMap(source),
+            hasDepthData: hasDepthData(source),
             fileSize: size
         )
+    }
+
+    private static func hasDepthData(_ source: CGImageSource) -> Bool {
+        [kCGImageAuxiliaryDataTypeDisparity, kCGImageAuxiliaryDataTypeDepth]
+            .contains { CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, $0) != nil }
     }
 
     private static func hasGainMap(_ source: CGImageSource) -> Bool {
