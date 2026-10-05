@@ -17,6 +17,8 @@ public enum JobState: String, Sendable, Codable, Equatable {
     /// Refused because the file can't be optimised safely (animated, CMYK, HDR gain map, a
     /// format v1 doesn't handle). Forcing would not help, so it is never offered.
     case unsupported
+    /// Not processed because the "if output exists: skip" policy found a result already there.
+    case skipped
 }
 
 public struct Job: Sendable, Codable, Identifiable, Equatable {

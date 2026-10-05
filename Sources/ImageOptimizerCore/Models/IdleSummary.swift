@@ -7,10 +7,11 @@ public enum IdleSummary {
         func count(_ states: JobState...) -> Int { jobs.filter { states.contains($0.state) }.count }
         var parts: [String] = []
         let succeeded = count(.succeeded), skipped = count(.alreadyOptimized, .discardedAsBlob)
-        let unsupported = count(.unsupported), cancelled = count(.cancelled), failed = count(.failed)
+        let unsupported = count(.unsupported), skippedExisting = count(.skipped), cancelled = count(.cancelled), failed = count(.failed)
         if succeeded > 0 { parts.append("\(succeeded) optimised") }
         if skipped > 0 { parts.append("\(skipped) already optimised") }
         if unsupported > 0 { parts.append("\(unsupported) unsupported") }
+        if skippedExisting > 0 { parts.append("\(skippedExisting) skipped") }
         if cancelled > 0 { parts.append("\(cancelled) stopped") }
         if failed > 0 { parts.append("\(failed) failed") }
         return parts.isEmpty ? "Drop images here" : parts.joined(separator: " · ")
@@ -30,7 +31,7 @@ public enum IdleSummary {
             return "\(formatBytes(before)) → \(formatBytes(after)) (\(text)) · click to show in Finder"
         }
         if let failed = jobs.last(where: { $0.state == .failed }), !failed.error.isEmpty { return failed.error }
-        if let skipped = jobs.last(where: { [.alreadyOptimized, .discardedAsBlob, .unsupported].contains($0.state) }),
+        if let skipped = jobs.last(where: { [.alreadyOptimized, .discardedAsBlob, .unsupported, .skipped].contains($0.state) }),
            !skipped.error.isEmpty {
             return skipped.error
         }

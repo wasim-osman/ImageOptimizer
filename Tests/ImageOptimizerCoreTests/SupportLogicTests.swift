@@ -55,6 +55,11 @@ struct ForceConvertTests {
     }
 
     /// Forcing an animated or HDR image would not make it safe, so it must never be offered.
+    @Test("a skipped file never prompts: forcing it would just be skipped again")
+    func skippedNeverPrompts() {
+        #expect(ForceConvert.shouldPromptToForce(url: url, among: [job(state: .skipped, error: "exists")]) == nil)
+    }
+
     @Test("an unsupported refusal never prompts")
     func unsupportedNeverPrompts() {
         #expect(ForceConvert.shouldPromptToForce(url: url, among: [job(state: .unsupported, error: "animated")]) == nil)
@@ -93,7 +98,7 @@ struct IdleSummaryTests {
     }
 
     @Test("every refusal's reason reaches the screen, never a blank line",
-          arguments: [JobState.alreadyOptimized, .discardedAsBlob, .unsupported, .failed])
+          arguments: [JobState.alreadyOptimized, .discardedAsBlob, .unsupported, .skipped, .failed])
     func reasonsShown(state: JobState) {
         #expect(IdleSummary.detail(for: [job(state: state, error: "the reason")]) == "the reason")
     }
@@ -114,9 +119,9 @@ struct IdleSummaryTests {
     func headline() {
         let h = IdleSummary.headline(for: [
             job(state: .succeeded, input: 10, result: 5), job(state: .alreadyOptimized), job(state: .discardedAsBlob),
-            job(state: .unsupported), job(state: .cancelled), job(state: .failed),
+            job(state: .unsupported), job(state: .skipped), job(state: .cancelled), job(state: .failed),
         ])
-        for part in ["1 optimised", "2 already optimised", "1 unsupported", "1 stopped", "1 failed"] {
+        for part in ["1 optimised", "2 already optimised", "1 unsupported", "1 skipped", "1 stopped", "1 failed"] {
             #expect(h.contains(part), "missing '\(part)' in '\(h)'")
         }
     }

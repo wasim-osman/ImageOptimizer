@@ -19,10 +19,12 @@ public enum Refusal: Sendable, Equatable {
     case alreadyEfficient(String)
     /// Can't be optimised safely. Forcing would not help.
     case unsupported(String)
+    /// The user's "skip if the output exists" policy found a result already there.
+    case outputExists(String)
 
     public var reason: String {
         switch self {
-        case .alreadyEfficient(let r), .unsupported(let r): return r
+        case .alreadyEfficient(let r), .unsupported(let r), .outputExists(let r): return r
         }
     }
 }
@@ -79,12 +81,17 @@ public struct EncodePlanner: Sendable {
             return refused(.unsupported("This image is \(Int(info.megapixels)) megapixels — too large to process safely."))
         }
 
-        // 2. Size guard. This is the one the user may override.
+        // 2. "Skip if the output exists". Checked before the size guard so a skipped file says so.
+        if settings.conflictPolicy == .skip, FileManager.default.fileExists(atPath: outputURL.path) {
+            return refused(.outputExists("Skipped — \(outputURL.lastPathComponent) already exists."))
+        }
+
+        // 3. Size guard. This is the one the user may override.
         if !forceEncode, case .alreadyOptimised(let reason) = bloatGuard.preflight(info, mode: settings.encoderMode) {
             return refused(.alreadyEfficient(reason))
         }
 
-        // 3. The ladder.
+        // 4. The ladder.
         let mode = settings.encoderMode
         var steps: [EncodeStep]
         var lossless = false

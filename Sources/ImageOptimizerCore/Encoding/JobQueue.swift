@@ -122,6 +122,9 @@ public actor JobQueue {
         case .refused(.unsupported(let reason)):
             update(id) { $0.state = .unsupported; $0.error = reason; $0.progress = 1 }
             finish(id); return
+        case .refused(.outputExists(let reason)):
+            update(id) { $0.state = .skipped; $0.error = reason; $0.progress = 1 }
+            finish(id); return
         case .planned:
             break
         }

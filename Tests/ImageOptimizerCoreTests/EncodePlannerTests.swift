@@ -206,3 +206,34 @@ struct DepthRefusalTests {
         }
     }
 }
+
+@Suite("EncodePlanner: skip policy")
+final class SkipPolicyTests {
+    private let dir: URL
+    init() throws { dir = try Fixtures.makeDirectory() }
+    deinit { try? FileManager.default.removeItem(at: dir) }
+
+    private func plan(_ policy: ResolveConflict, existing: Bool) throws -> ImagePlan {
+        let src = dir.appendingPathComponent("a.jpg")
+        if existing { try Data("x".utf8).write(to: dir.appendingPathComponent("a_optimized.jpg")) }
+        var s = Settings(); s.conflictPolicy = policy
+        return EncodePlanner().plan(info: ImageInfo(format: .jpeg, width: 4000, height: 3000, fileSize: 4_000_000), inputURL: src, settings: s)
+    }
+
+    @Test("skip policy refuses when the output already exists, and says which file")
+    func skipsExisting() throws {
+        guard case .refused(.outputExists(let why)) = try plan(.skip, existing: true).outcome else {
+            Issue.record("expected outputExists"); return
+        }
+        #expect(why.contains("a_optimized.jpg"))
+    }
+
+    @Test("skip policy proceeds normally when there is nothing to skip")
+    func skipProceedsWhenFree() throws { #expect(try plan(.skip, existing: false).outcome == .planned) }
+
+    @Test("overwrite and number policies never skip")
+    func otherPoliciesDontSkip() throws {
+        #expect(try plan(.overwrite, existing: true).outcome == .planned)
+        #expect(try plan(.numberIt, existing: true).outcome == .planned)
+    }
+}
