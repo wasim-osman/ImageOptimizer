@@ -1,0 +1,12 @@
+.build/
+dist/
+.DS_Store
+*.xcuserstate
+
+# Never commit test images or benchmark output: they come from real personal photos.
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.heif
+*.ppm
