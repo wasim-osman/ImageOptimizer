@@ -103,8 +103,13 @@ public struct EncodePlanner: Sendable {
         case .png:
             let useLossy = settings.pngLossy && mode != .highQuality
             if useLossy {
+                // Measured on 24 real PNGs: pngquant has effectively ONE useful lossy operating
+                // point. Speed and oxipng level move the median by under 0.5%, and the old
+                // "smallest" range (70-95) was dominated: 0.7% smaller at the median but a
+                // worse tail (p90 42.5% vs 39.1%) and visibly lower quality (min ssim2 71.6 vs 73.3,
+                // median 82 vs 89). So smallest uses the same range, just the slowest search.
                 switch mode {
-                case .smallest: steps = [.pngquant(minQuality: 70, maxQuality: 95, speed: 1), .oxipng(level: 4)]
+                case .smallest: steps = [.pngquant(minQuality: 80, maxQuality: 98, speed: 1), .oxipng(level: 6)]
                 default: steps = [.pngquant(minQuality: 80, maxQuality: 98, speed: 3), .oxipng(level: 4)]
                 }
                 note = "pngquant + oxipng"

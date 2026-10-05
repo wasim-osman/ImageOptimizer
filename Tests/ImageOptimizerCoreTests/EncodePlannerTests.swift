@@ -73,20 +73,33 @@ struct EncodePlannerTests {
         #expect(p.isLossless)
     }
 
-    @Test("smallest PNG accepts a wider quantisation range than balanced")
-    func smallestPNGIsMoreAggressive() throws {
-        func minQuality(_ mode: EncoderMode) throws -> Int {
+    /// Real-data finding: a wider (lower-floor) range made PNGs no smaller but visibly worse.
+    @Test("smallest PNG never accepts a lower quality floor than balanced")
+    func smallestPNGDoesNotLowerTheFloor() throws {
+        func floor(_ mode: EncoderMode) throws -> Int {
             guard case .pngquant(let lo, _, _) = try #require(plan(fat(.png)) { $0.encoderMode = mode }.steps.first) else { throw NSError(domain: "x", code: 1) }
             return lo
         }
-        #expect(try minQuality(.smallest) < minQuality(.balanced))
+        #expect(try floor(.smallest) >= floor(.balanced))
     }
 
-    @Test("the aggressive range that benchmarked as visibly damaging (60-85) is never planned")
+    @Test("smallest PNG searches harder than balanced, rather than accepting more damage")
+    func smallestPNGSearchesHarder() throws {
+        func speedAndLevel(_ mode: EncoderMode) throws -> (Int, Int) {
+            let steps = plan(fat(.png)) { $0.encoderMode = mode }.steps
+            guard case .pngquant(_, _, let speed) = try #require(steps.first), case .oxipng(let level) = try #require(steps.last) else { throw NSError(domain: "x", code: 1) }
+            return (speed, level)
+        }
+        let balanced = try speedAndLevel(.balanced), smallest = try speedAndLevel(.smallest)
+        #expect(smallest.0 < balanced.0, "pngquant speed 1 is the slowest, best search")
+        #expect(smallest.1 > balanced.1)
+    }
+
+    @Test("no planned PNG range falls below the floor the real-photo benchmark showed is safe (80)")
     func neverPlansTheDamagingRange() {
         for mode in EncoderMode.allCases {
             for step in plan(fat(.png)) { $0.encoderMode = mode }.steps {
-                if case .pngquant(let lo, _, _) = step { #expect(lo >= 70, "min quality \(lo) is below the tested floor") }
+                if case .pngquant(let lo, _, _) = step { #expect(lo >= 80, "min quality \(lo): the 60-85 and 70-95 ranges measured as visibly damaging") }
             }
         }
     }

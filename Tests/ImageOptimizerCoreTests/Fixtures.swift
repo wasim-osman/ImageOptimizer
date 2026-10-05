@@ -232,3 +232,51 @@ enum Requirements {
     static let jpegli = ToolLocator.url(for: .cjpegli) != nil
     static let png = ToolLocator.url(for: .oxipng) != nil && ToolLocator.url(for: .pngquant) != nil
 }
+
+// MARK: - Perceptual quality oracle
+
+extension Fixtures {
+    /// ssimulacra2 ships with libjxl and is a development-only dependency: it scores how different
+    /// two images LOOK (70 good, 85 high quality, 90 very high). Never bundled with the app.
+    static let ssimulacra2URL: URL? = {
+        let candidates = [
+            ProcessInfo.processInfo.environment["SSIMULACRA2"],
+            "/Users/Wasim/.homebrew/bin/ssimulacra2", "/opt/homebrew/bin/ssimulacra2", "/usr/local/bin/ssimulacra2",
+        ].compactMap { $0 }
+        return candidates.map { URL(fileURLWithPath: $0) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }()
+
+    /// Renders `url` the way a viewer shows it (upright, colour-managed, sRGB) into a PNG.
+    static func renderViewerPNG(_ url: URL, to out: URL) -> Bool {
+        guard let (w, h, rgba) = viewerPixels(url) else { return false }
+        var buf = rgba
+        let ok = buf.withUnsafeMutableBytes { raw -> CGImage? in
+            CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
+        }
+        guard let image = ok, let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.png.identifier as CFString, 1, nil) else { return false }
+        CGImageDestinationAddImage(dest, image, nil)
+        return CGImageDestinationFinalize(dest)
+    }
+
+    /// Perceptual score of `candidate` against `reference` (higher is better), or nil if unavailable.
+    static func perceptualScore(reference: URL, candidate: URL, scratch: URL) -> Double? {
+        guard let tool = ssimulacra2URL else { return nil }
+        let a = scratch.appendingPathComponent("ref-\(UUID().uuidString.prefix(6)).png")
+        let b = scratch.appendingPathComponent("cand-\(UUID().uuidString.prefix(6)).png")
+        guard renderViewerPNG(reference, to: a), renderViewerPNG(candidate, to: b) else { return nil }
+        let p = Process()
+        p.executableURL = tool
+        p.arguments = [a.path, b.path]
+        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return Double(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").last ?? "")
+    }
+}
+
+extension Requirements {
+    static let oracle = Fixtures.ssimulacra2URL != nil
+}

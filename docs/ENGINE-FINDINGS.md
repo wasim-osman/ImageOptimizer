@@ -54,7 +54,7 @@ pinned commit with `scripts/build-jpegli.sh`.
   88.6. The aggressive 60–85 range dropped as low as 50.8, which is visibly damaged; not a default.
 - "Lossless" claims are verified by hashing decoded pixels, not assumed.
 
-## HEIC: ImageIO, with two hard rules
+## HEIC: ImageIO, with hard rules
 
 Apple's encoder is the only practical option, and it has hardware support. A naive re-encode has
 three failure modes, all observed on real iPhone photos:
@@ -65,11 +65,17 @@ three failure modes, all observed on real iPhone photos:
 | EXIF orientation (7 of 8 are rotated) | **lost, photo displays sideways** | kept |
 | HDR gain map (2 of 8 have one) | **lost** | **lost** |
 
-1. **Always encode by copying from the source image** (`CGImageDestinationAddImageFromSource`),
-   never from a decoded bitmap. This alone fixes orientation, at identical file size.
+1. **Re-encode the decoded bitmap and pass the orientation explicitly.** (Superseded: the first
+   draft copied from the source with `CGImageDestinationAddImageFromSource`, which keeps
+   orientation but also keeps EXIF capture time and camera model; ImageIO can only exclude the
+   GPS. Re-encoding the bitmap with `kCGImagePropertyOrientation` set strips GPS, capture time
+   and camera model, and keeps orientation and the Display P3 profile. Verified.)
 2. **Refuse images with an HDR gain map** in v1, and say why. ImageIO cannot carry the gain map
    across. It is also dangerous because the loss looks like a win: one HDR photo "shrank" to 40%
    of its size, and that saving was the HDR layer being deleted, not compression.
+
+3. **Refuse portrait photos (depth maps) for the same reason**: the bitmap route deletes the depth
+   data Photos uses for portrait editing.
 
 None of the 30 sampled JPEGs carried a gain map, so this is a HEIC problem in practice.
 
@@ -94,3 +100,35 @@ asserted.
 
 jpegli `031a007`, oxipng 10.2.1, pngquant 3.0.3, mozjpeg 4.1.5, libjpeg-turbo 3.2.0,
 ssimulacra2 from jpeg-xl 0.12.0, macOS 27, Apple Silicon.
+
+## The finished product, validated on real images (milestone 4)
+
+The real `ImageOptimizerCLI` (the whole pipeline, not the individual encoders) was run over the same
+sample in every mode, working on copies, and each result scored against its source with ssimulacra2
+on viewer-equivalent renders (upright, colour-managed).
+
+| Format | Mode | Output size, median % of original | ssimulacra2 min / median |
+|---|---|---|---|
+| JPEG | High quality | 69% | 86.0 / 88.3 |
+| JPEG | Balanced | **51%** | 80.9 / 85.6 |
+| JPEG | Smallest | **26%** | 68.3 / 77.1 |
+| PNG | High quality (lossless) | 82% | 100 (pixel-exact) |
+| PNG | Balanced | **35.5%** | 73.3 / 88.6 |
+| PNG | Smallest | 35.3% | 73.3 / 88.6 |
+| HEIC | High quality | every file discarded as no smaller | |
+| HEIC | Balanced | 89.5% | 80.8 / 83.9 |
+| HEIC | Smallest | 62.7% | 72.1 / 76.4 |
+
+Speed: a JPEG takes about 0.24 s, a HEIC about 0.23 s, and a PNG about 1 s (worst case 2.8 s).
+
+What the validation changed:
+
+- **PNG "smallest" was worse than "balanced".** The first ladder used pngquant 70-95; measured on 24
+  real PNGs it was 0.7% smaller at the median but had a worse tail and visibly lower quality
+  (min 71.6, median 82 vs 88.6). pngquant has effectively one useful lossy operating point: speed and
+  oxipng level move the median by under 0.5%. Smallest now uses the same range with the slowest search.
+- **HEIC savings are modest by nature.** iPhone HEICs are already well compressed by Apple's hardware
+  encoder, so a re-encode at equal perceived quality saves about 10%. High quality mode correctly
+  finds nothing worth keeping. The README says so rather than overselling.
+- A harness bug worth recording: run from a directory without `.tools/bin`, all 160 JPEG and PNG
+  jobs failed with the clear message "The cjpegli encoder is missing from this install".
