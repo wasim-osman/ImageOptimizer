@@ -19,12 +19,15 @@ public enum Refusal: Sendable, Equatable {
     case alreadyEfficient(String)
     /// Can't be optimised safely. Forcing would not help.
     case unsupported(String)
+    /// Has an HDR gain map that re-encoding would delete. The photo still looks right afterwards
+    /// (in standard dynamic range), so the user may choose to go ahead.
+    case hdrLayer(String)
     /// The user's "skip if the output exists" policy found a result already there.
     case outputExists(String)
 
     public var reason: String {
         switch self {
-        case .alreadyEfficient(let r), .unsupported(let r), .outputExists(let r): return r
+        case .alreadyEfficient(let r), .unsupported(let r), .hdrLayer(let r), .outputExists(let r): return r
         }
     }
 }
@@ -64,21 +67,24 @@ public struct EncodePlanner: Sendable {
             ImagePlan(inputURL: inputURL, outputURL: outputURL, outcome: .refused(r), steps: [], isLossless: false, qualityNote: "")
         }
 
-        // 1. Things we can't optimise safely. Never overridable.
+        // 1. Things we can't optimise safely. Never overridable (the HDR layer, below, is the exception).
         if info.isAnimated {
             return refused(.unsupported("Animated images aren't supported — re-encoding would flatten the animation to one frame."))
         }
         if info.colorModel == .cmyk {
             return refused(.unsupported("CMYK images aren't supported — converting them would change the colours."))
         }
-        if info.hasGainMap {
-            return refused(.unsupported("HDR photos aren't supported yet — re-encoding would silently remove the HDR (gain map)."))
-        }
         if info.hasDepthData {
             return refused(.unsupported("Portrait photos aren't supported yet — re-encoding would delete the depth data Photos uses for portrait editing."))
         }
         if info.megapixels > Self.maximumMegapixels {
             return refused(.unsupported("This image is \(Int(info.megapixels)) megapixels — too large to process safely."))
+        }
+
+        // The HDR gain map is dropped by any re-encode here. Not a safety problem, so the user
+        // decides: refused unless they have said to go ahead.
+        if info.hasGainMap, !forceEncode {
+            return refused(.hdrLayer("This photo has an HDR layer (iPhone photos usually do). Optimising it keeps how it looks in standard brightness but removes the extra HDR brightness."))
         }
 
         // 2. "Skip if the output exists". Checked before the size guard so a skipped file says so.

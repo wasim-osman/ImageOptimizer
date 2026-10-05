@@ -40,9 +40,12 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
 - **Never makes a file worse.** A source that's already efficient is refused, and a result that isn't
   meaningfully smaller is discarded and never written. Drop the same refused file again and it asks
   **"Optimise anyway?"**.
-- **Refuses what it can't do safely**, and says why: animated images, CMYK, **HDR photos** and **portrait
-  photos with depth data** (a re-encode would silently delete the HDR layer or depth map), and formats other
-  than JPEG, PNG and HEIC (GIF, TIFF, WebP, AVIF, RAW). Forcing never overrides these.
+- **Asks before removing an HDR layer.** Most iPhone photos carry one. Re-encoding keeps how the photo
+  looks in standard brightness but drops the extra HDR brightness, so the app asks first ("Optimise Without
+  HDR") rather than doing it silently.
+- **Refuses what it can't do safely**, and says why: animated images, CMYK, **portrait photos with depth
+  data** (a re-encode would delete the depth map), and formats other than JPEG, PNG and HEIC (GIF, TIFF,
+  WebP, AVIF, RAW). Forcing never overrides these.
 
 ## Modes
 
@@ -132,7 +135,7 @@ passes an explicit `-plugin-path` so its macros resolve; that flag is harmless w
 ## Known limitations
 
 - **Not signed or notarised.** Gatekeeper warns on first launch.
-- **HEIC savings are small** (see above), and HDR and portrait HEICs are refused.
+- **HEIC savings are small** (see above), and HDR photos need your confirmation and portrait photos are refused.
 - **JPEG, PNG and HEIC only.** Everything else is refused with a message.
 - Lossy PNG can show banding on smooth gradients in rare cases; use High quality mode to stay lossless.
 - The interactive dialogs (Optimise anyway, quit confirmation), the double-click picker and the Settings

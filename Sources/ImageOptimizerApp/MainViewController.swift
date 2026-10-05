@@ -16,6 +16,9 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     /// Jobs already folded into the lifetime total, so each counts exactly once however many times
     /// the poll timer sees it sitting finished.
     private var recordedJobIDs: Set<UUID> = []
+    /// HDR refusals already put to the user, so each is asked about exactly once however often the
+    /// poll timer sees it.
+    private var promptedHDRJobIDs: Set<UUID> = []
 
     init() {
         let settings = SettingsStore.shared.settings
@@ -76,11 +79,39 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
                 guard !seen.contains(key) else { continue }
                 seen.insert(key)
                 if let refused = ForceConvert.shouldPromptToForce(url: url, among: all) {
-                    guard confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error) else { continue }
+                    let go = refused.state == .hdrLayer
+                        ? confirmHDRConvert(fileName: url.lastPathComponent, reason: refused.error)
+                        : confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error)
+                    guard go else { continue }
                     await queue.addJob(url: url, forceEncode: true)
                 } else {
                     await queue.addJob(url: url)
                 }
+            }
+            refresh()
+        }
+    }
+
+    /// Asked as soon as an HDR photo is refused, so a drop never seems to do nothing.
+    private func confirmHDRConvert(fileName: String, reason: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "\"\(fileName)\" is an HDR photo"
+        alert.informativeText = "\(reason)\n\nThe optimised copy is saved next to the original, which stays untouched."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Optimise Without HDR")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Puts each newly refused HDR photo to the user once.
+    private func promptForNewHDRRefusals(_ jobs: [Job]) {
+        let fresh = jobs.filter { $0.state == .hdrLayer && !promptedHDRJobIDs.contains($0.id) }
+        guard !fresh.isEmpty else { return }
+        fresh.forEach { promptedHDRJobIDs.insert($0.id) }
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+            for job in fresh where confirmHDRConvert(fileName: job.inputURL.lastPathComponent, reason: job.error) {
+                await queue.addJob(url: job.inputURL, forceEncode: true)
             }
             refresh()
         }
@@ -158,6 +189,7 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
 
     private func render(_ jobs: [Job]) {
         recordNewlySucceeded(jobs)
+        promptForNewHDRRefusals(jobs)
         let active = jobs.filter(\.isActive)
         hasActiveJobs = !active.isEmpty
         dropZone.setStopButtonVisible(hasActiveJobs)

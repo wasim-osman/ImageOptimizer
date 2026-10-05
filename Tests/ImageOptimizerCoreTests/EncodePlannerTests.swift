@@ -138,13 +138,28 @@ struct EncodePlannerTests {
     }
 
     /// The benchmark's most dangerous finding: dropping the gain map looked like a 60% saving.
-    @Test("an HDR gain-map image is refused, even when forced")
-    func gainMapRefused() {
-        for force in [false, true] {
-            guard case .refused(.unsupported(let why)) = plan(fat(.heic) { $0.hasGainMap = true }, force: force).outcome else {
-                Issue.record("force=\(force): expected unsupported"); continue
+    /// So it is never done silently: refused with a reason until the user says to go ahead.
+    @Test("an HDR gain-map image is refused unless the user chose to go ahead")
+    func gainMapAsksFirst() {
+        for format in [ImageFormat.heic, .jpeg] {
+            guard case .refused(.hdrLayer(let why)) = plan(fat(format) { $0.hasGainMap = true }).outcome else {
+                Issue.record("\(format): expected an overridable HDR refusal"); continue
             }
             #expect(why.contains("HDR"))
+            if case .refused = plan(fat(format) { $0.hasGainMap = true }, force: true).outcome {
+                Issue.record("\(format): forcing should proceed")
+            }
+        }
+    }
+
+    @Test("forcing never overrides a genuinely unsafe image, even one that also has an HDR layer")
+    func forceStillRefusesUnsafe() {
+        for tweak in [{ (i: inout ImageInfo) in i.frameCount = 3 }, { (i: inout ImageInfo) in i.hasDepthData = true }] {
+            var info = fat(.heic) { $0.hasGainMap = true }
+            tweak(&info)
+            guard case .refused(.unsupported) = plan(info, force: true).outcome else {
+                Issue.record("expected unsupported"); continue
+            }
         }
     }
 

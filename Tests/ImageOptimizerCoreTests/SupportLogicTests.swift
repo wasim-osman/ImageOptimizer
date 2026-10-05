@@ -49,7 +49,7 @@ struct ForceConvertTests {
     private let url = URL(fileURLWithPath: "/tmp/a.jpg")
 
     @Test("a size-guard refusal of this exact file prompts",
-          arguments: [JobState.alreadyOptimized, .discardedAsBlob])
+          arguments: [JobState.alreadyOptimized, .discardedAsBlob, .hdrLayer])
     func refusalPrompts(state: JobState) {
         #expect(ForceConvert.shouldPromptToForce(url: url, among: [job(state: state, error: "why")])?.error == "why")
     }
