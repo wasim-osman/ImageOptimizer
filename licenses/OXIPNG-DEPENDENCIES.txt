@@ -1,0 +1,67 @@
+Rust crates compiled into oxipng (generated from Cargo.lock with cargo metadata)
+
+aho-corasick 1.1.4: Unlicense OR MIT
+anstream 1.0.0: MIT OR Apache-2.0
+anstyle 1.0.14: MIT OR Apache-2.0
+anstyle-parse 1.0.0: MIT OR Apache-2.0
+anstyle-query 1.1.5: MIT OR Apache-2.0
+anstyle-wincon 3.0.11: MIT OR Apache-2.0
+bitflags 2.11.1: MIT OR Apache-2.0
+bumpalo 3.20.2: MIT OR Apache-2.0
+bytemuck 1.25.0: Zlib OR Apache-2.0 OR MIT
+cc 1.2.60: MIT OR Apache-2.0
+cfg-if 1.0.4: MIT OR Apache-2.0
+clap 4.6.6: MIT OR Apache-2.0
+clap_builder 4.6.6: MIT OR Apache-2.0
+clap_lex 1.1.0: MIT OR Apache-2.0
+colorchoice 1.0.5: MIT OR Apache-2.0
+crc32fast 1.5.0: MIT OR Apache-2.0
+crossbeam-deque 0.8.6: MIT OR Apache-2.0
+crossbeam-epoch 0.9.18: MIT OR Apache-2.0
+crossbeam-utils 0.8.21: MIT OR Apache-2.0
+either 1.15.0: MIT OR Apache-2.0
+env_filter 2.0.0: MIT OR Apache-2.0
+env_logger 0.11.11: MIT OR Apache-2.0
+equivalent 1.0.2: Apache-2.0 OR MIT
+errno 0.3.14: MIT OR Apache-2.0
+find-msvc-tools 0.1.9: MIT OR Apache-2.0
+glob 0.3.4: MIT OR Apache-2.0
+hashbrown 0.17.0: MIT OR Apache-2.0
+indexmap 2.14.0: Apache-2.0 OR MIT
+is_terminal_polyfill 1.70.2: MIT OR Apache-2.0
+itoa 1.0.18: MIT OR Apache-2.0
+libc 0.2.185: MIT OR Apache-2.0
+libdeflate-sys 1.26.0: Apache-2.0
+libdeflater 1.26.0: Apache-2.0
+linux-raw-sys 0.12.1: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+log 0.4.34: MIT OR Apache-2.0
+memchr 2.8.0: Unlicense OR MIT
+once_cell_polyfill 1.70.2: MIT OR Apache-2.0
+parse-size 1.1.0: MIT
+proc-macro2 1.0.106: MIT OR Apache-2.0
+quote 1.0.45: MIT OR Apache-2.0
+rayon 1.12.0: MIT OR Apache-2.0
+rayon-core 1.13.0: MIT OR Apache-2.0
+regex 1.12.4: MIT OR Apache-2.0
+regex-automata 0.4.14: MIT OR Apache-2.0
+regex-syntax 0.8.11: MIT OR Apache-2.0
+rgb 0.8.53: MIT
+rustc-hash 2.1.3: Apache-2.0 OR MIT
+rustix 1.1.4: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+serde 1.0.228: MIT OR Apache-2.0
+serde_core 1.0.228: MIT OR Apache-2.0
+serde_derive 1.0.228: MIT OR Apache-2.0
+serde_json 1.0.151: MIT OR Apache-2.0
+shlex 1.3.0: MIT OR Apache-2.0
+simd-adler32 0.3.9: MIT
+strsim 0.11.1: MIT
+syn 2.0.117: MIT OR Apache-2.0
+terminal_size 0.4.4: MIT OR Apache-2.0
+unicode-ident 1.0.24: (MIT OR Apache-2.0) AND Unicode-3.0
+utf8parse 0.2.2: Apache-2.0 OR MIT
+windows-link 0.2.1: MIT OR Apache-2.0
+windows-sys 0.61.2: MIT OR Apache-2.0
+zmij 1.0.21: MIT
+zopfli 0.8.3: Apache-2.0
+
+63 crates
