@@ -20,7 +20,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let concurrency = NSStepper()
     private let concurrencyLabel = NSTextField(labelWithString: "4")
     private let preserveDates = NSButton(checkboxWithTitle: "Keep the original file's dates", target: nil, action: nil)
-    private let deleteSource = NSButton(checkboxWithTitle: "Move the original to the Trash after optimising", target: nil, action: nil)
+    private let deleteSource = NSButton(checkboxWithTitle: "Move the original to the Trash after optimising (never RAW files)", target: nil, action: nil)
 
     convenience init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 330),

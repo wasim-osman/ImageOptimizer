@@ -51,6 +51,9 @@ public struct ImagePlan: Sendable, Equatable {
 public struct EncodePlanner: Sendable {
     private let bloatGuard = BloatGuard()
 
+    /// What a RAW file is developed into.
+    public static let rawOutputExtension = "jpg"
+
     /// Refuse enormous images rather than exhaust memory decoding them.
     public static let maximumMegapixels = 150.0
 
@@ -61,7 +64,8 @@ public struct EncodePlanner: Sendable {
             inputURL: inputURL, suffix: settings.suffix,
             outputLocation: settings.outputLocation,
             chosenFolderPath: settings.chosenFolderPath,
-            conflictPolicy: settings.conflictPolicy
+            conflictPolicy: settings.conflictPolicy,
+            outputExtension: info.format == .raw ? Self.rawOutputExtension : nil
         )
         func refused(_ r: Refusal) -> ImagePlan {
             ImagePlan(inputURL: inputURL, outputURL: outputURL, outcome: .refused(r), steps: [], isLossless: false, qualityNote: "")
@@ -74,7 +78,9 @@ public struct EncodePlanner: Sendable {
         if info.colorModel == .cmyk {
             return refused(.unsupported("CMYK images aren't supported — converting them would change the colours."))
         }
-        if info.hasDepthData {
+        // A RAW file is never modified or replaced: the JPEG is a new file made from it, so an HDR
+        // layer or depth map in the original is not "lost" and needs no confirmation.
+        if info.hasDepthData, info.format != .raw {
             return refused(.unsupported("Portrait photos aren't supported yet — re-encoding would delete the depth data Photos uses for portrait editing."))
         }
         if info.megapixels > Self.maximumMegapixels {
@@ -83,7 +89,7 @@ public struct EncodePlanner: Sendable {
 
         // The HDR gain map is dropped by any re-encode here. Not a safety problem, so the user
         // decides: refused unless they have said to go ahead.
-        if info.hasGainMap, !forceEncode {
+        if info.hasGainMap, info.format != .raw, !forceEncode {
             return refused(.hdrLayer("This photo has an HDR layer (iPhone photos usually do). Optimising it keeps how it looks in standard brightness but removes the extra HDR brightness."))
         }
 
@@ -103,16 +109,29 @@ public struct EncodePlanner: Sendable {
         var lossless = false
         let note: String
         switch info.format {
-        case .jpeg:
+        case .jpeg, .raw:
             let distance: Double
             var chroma: String? = nil
-            switch mode {
-            case .highQuality: distance = 0.6
-            case .balanced: distance = 1.0
-            case .smallest: distance = 1.7; chroma = "420"
+            if info.format == .raw {
+                // A RAW render keeps all its detail and noise, so the same distance scores lower
+                // than on an already-compressed JPEG. Measured on 12 real RAWs (iPhone ProRAW and
+                // Canon CR2) against the lossless render: d1.0 gave ssim2 83.3, below the ~85 that
+                // "Balanced" means for JPEG. These distances match the JPEG ladder's quality levels
+                // (88 / 85 / 77) at 11.8% / 6.2% / 2.5% of the RAW's size.
+                switch mode {
+                case .highQuality: distance = 0.3
+                case .balanced: distance = 0.7
+                case .smallest: distance = 1.7; chroma = "420"
+                }
+            } else {
+                switch mode {
+                case .highQuality: distance = 0.6
+                case .balanced: distance = 1.0
+                case .smallest: distance = 1.7; chroma = "420"
+                }
             }
             steps = [.jpegli(distance: distance, chromaSubsampling: chroma)]
-            note = "jpegli distance \(distance)"
+            note = info.format == .raw ? "RAW developed, then jpegli distance \(distance)" : "jpegli distance \(distance)"
         case .png:
             let useLossy = settings.pngLossy && mode != .highQuality
             if useLossy {

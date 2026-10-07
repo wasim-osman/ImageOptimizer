@@ -1,7 +1,9 @@
 // ImageProbe.swift - Reads an image's properties with ImageIO. No external tool involved.
 
 import Foundation
+import CoreImage
 import ImageIO
+import UniformTypeIdentifiers
 
 public enum ProbeError: LocalizedError, Sendable, Equatable {
     case unreadable(String)
@@ -12,7 +14,7 @@ public enum ProbeError: LocalizedError, Sendable, Equatable {
         switch self {
         case .unreadable(let why): return "Couldn't read this image: \(why)"
         case .unsupportedFormat(let name):
-            return "\(name) isn't supported yet. ImageOptimizer handles JPEG, PNG and HEIC."
+            return "\(name) isn't supported yet. ImageOptimizer handles JPEG, PNG, HEIC and camera RAW."
         }
     }
 }
@@ -27,8 +29,6 @@ public enum ImageProbe {
         "public.jpeg-2000": "JPEG 2000",
         "com.microsoft.bmp": "BMP",
         "com.adobe.photoshop-image": "Photoshop",
-        "com.adobe.raw-image": "RAW",
-        "public.camera-raw-image": "RAW",
         "com.adobe.pdf": "PDF",
         "public.svg-image": "SVG",
     ]
@@ -41,6 +41,7 @@ public enum ImageProbe {
             throw ProbeError.unreadable("unknown image type")
         }
         let format: ImageFormat
+        if UTType(type)?.conforms(to: .rawImage) == true { return try probeRAW(url: url, source: source) }
         switch type {
         case "public.jpeg": format = .jpeg
         case "public.png": format = .png
@@ -84,6 +85,25 @@ public enum ImageProbe {
     private static func hasDepthData(_ source: CGImageSource) -> Bool {
         [kCGImageAuxiliaryDataTypeDisparity, kCGImageAuxiliaryDataTypeDepth]
             .contains { CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, $0) != nil }
+    }
+
+    /// A RAW file's own ImageIO dimensions can describe an embedded preview rather than the sensor
+    /// image, so ask the RAW decoder for the true size. The orientation is reported as stored;
+    /// the decoder applies it, so nothing downstream rotates a RAW a second time.
+    private static func probeRAW(url: URL, source: CGImageSource) throws -> ImageInfo {
+        guard let filter = CIRAWFilter(imageURL: url) else {
+            throw ProbeError.unreadable("this macOS version can't read RAW files from this camera. Updating macOS adds newer cameras")
+        }
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        let width = Int(filter.nativeSize.width), height = Int(filter.nativeSize.height)
+        guard width > 0, height > 0 else { throw ProbeError.unreadable("no pixel dimensions") }
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+        return ImageInfo(
+            format: .raw, width: width, height: height,
+            orientation: props[kCGImagePropertyOrientation] as? Int ?? 1,
+            bitDepth: 16, hasAlpha: false, colorModel: .rgb, iccProfileName: nil,
+            frameCount: 1, hasGainMap: false, hasDepthData: false, fileSize: size
+        )
     }
 
     private static func hasGainMap(_ source: CGImageSource) -> Bool {

@@ -12,15 +12,17 @@ public enum PathSupport {
     }
 
     /// `<name><suffix>.<ext>`, beside the source or in the chosen folder. The extension is the
-    /// source's own: images keep their format, so a .jpeg stays a .jpeg.
+    /// source's own (images keep their format, so a .jpeg stays a .jpeg) unless `outputExtension`
+    /// says otherwise, as it does for a RAW file that becomes a .jpg.
     public static func outputURL(
         inputURL: URL,
         suffix: String,
         outputLocation: OutputLocation,
         chosenFolderPath: String,
-        conflictPolicy: ResolveConflict
+        conflictPolicy: ResolveConflict,
+        outputExtension: String? = nil
     ) -> URL {
-        let ext = inputURL.pathExtension
+        let ext = outputExtension ?? inputURL.pathExtension
         let safe = sanitisedBaseName(inputURL.deletingPathExtension().lastPathComponent)
         let directory: URL
         switch outputLocation {

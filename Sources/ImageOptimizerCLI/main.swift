@@ -9,6 +9,7 @@
 //     --plan                             show what would happen, encode nothing
 
 import Foundation
+import UniformTypeIdentifiers
 import ImageOptimizerCore
 
 func fail(_ message: String) -> Never {
@@ -60,7 +61,7 @@ for path in inputs {
     if isDir.boolValue {
         let kids = (try? FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: path), includingPropertiesForKeys: nil,
                                                                   options: [.skipsHiddenFiles])) ?? []
-        files += kids.filter { ["jpg", "jpeg", "png", "heic", "heif"].contains($0.pathExtension.lowercased()) }.sorted { $0.path < $1.path }
+        files += kids.filter { (UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) ?? false) }.sorted { $0.path < $1.path }
     } else {
         files.append(URL(fileURLWithPath: path))
     }

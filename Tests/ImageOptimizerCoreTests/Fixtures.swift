@@ -280,3 +280,34 @@ extension Fixtures {
 extension Requirements {
     static let oracle = Fixtures.ssimulacra2URL != nil
 }
+
+extension Requirements {
+    /// A real camera RAW to test against. A RAW can't be generated here (ImageIO can't write one and
+    /// a hand-built DNG isn't accepted by Apple's reader), and photos can't be committed, so the end-to-end RAW
+    /// tests use a file found on the machine and skip themselves when there is none. Point
+    /// IMAGEOPTIMIZER_RAW_SAMPLE at a specific file to choose it. The smallest one found is used, to keep the suite quick.
+    static let rawSample: URL? = {
+        if let path = ProcessInfo.processInfo.environment["IMAGEOPTIMIZER_RAW_SAMPLE"] {
+            return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+        }
+        let extensions: Set<String> = ["dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2"]
+        var best: (url: URL, size: Int)?
+        var visited = 0
+        for folder in ["Downloads", "Pictures", "Desktop", "Documents"] {
+            let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(folder)
+            guard let walker = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { continue }
+            for case let url as URL in walker {
+                visited += 1
+                if visited > 20_000 { break }
+                if walker.level > 4 { walker.skipDescendants(); continue }
+                guard extensions.contains(url.pathExtension.lowercased()),
+                      let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 100_000 else { continue }
+                if best == nil || size < best!.size { best = (url, size) }
+            }
+        }
+        return best?.url
+    }()
+    static let rawAvailable = rawSample != nil
+}

@@ -158,7 +158,8 @@ public actor JobQueue {
                     $0.state = .succeeded; $0.resultURL = plan.outputURL; $0.resultSize = size; $0.progress = 1
                     $0.error = report.notes.joined(separator: " ")
                 }
-                if settings.deleteSource { trash(job.inputURL) }
+                // Never a RAW: it is the negative, and the JPEG made from it is lossy and cannot be developed again.
+                if settings.deleteSource, info.format != .raw { trash(job.inputURL) }
             }
         } catch EncodeError.cancelled {
             try? FileManager.default.removeItem(at: partURL)

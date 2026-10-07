@@ -5,12 +5,15 @@ import Foundation
 /// The formats v1 can optimise. Everything else is refused with a reason, never mangled.
 public enum ImageFormat: String, Sendable, Codable, Equatable, CaseIterable {
     case jpeg, png, heic
+    /// Camera RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 ...). Never written: it is developed into a JPEG.
+    case raw
 
     public var displayName: String {
         switch self {
         case .jpeg: return "JPEG"
         case .png: return "PNG"
         case .heic: return "HEIC"
+        case .raw: return "RAW"
         }
     }
 }

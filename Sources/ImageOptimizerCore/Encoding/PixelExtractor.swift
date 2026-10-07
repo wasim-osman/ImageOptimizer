@@ -10,6 +10,7 @@
 //    would wash it out.
 
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 
@@ -27,7 +28,39 @@ struct DecodedPixels: @unchecked Sendable {
 }
 
 enum PixelExtractor {
+    /// Develops a camera RAW with Apple's own RAW engine (the one Preview and Photos use), so the
+    /// JPEG looks like what the Mac shows for that file. The engine applies the camera's rotation
+    /// itself, so the pixels come out upright and must not be rotated again. They are rendered in
+    /// Display P3, which keeps wide-gamut colour, and that profile is embedded in the JPEG.
+    static func extractRAW(url: URL) throws -> DecodedPixels {
+        guard let filter = CIRAWFilter(imageURL: url), let developed = filter.outputImage else {
+            throw EncodeError.decodeFailed("this macOS version can't develop RAW files from this camera. Updating macOS adds newer cameras")
+        }
+        let extent = developed.extent.integral
+        let width = Int(extent.width), height = Int(extent.height)
+        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.displayP3) else {
+            throw EncodeError.decodeFailed("empty RAW image")
+        }
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { buf in
+            CIContext(options: [.cacheIntermediates: false])
+                .render(developed, toBitmap: buf.baseAddress!, rowBytes: width * 4, bounds: extent, format: .RGBA8, colorSpace: space)
+        }
+        var rgb = [UInt8](repeating: 0, count: width * height * 3)
+        rgba.withUnsafeBufferPointer { src in
+            rgb.withUnsafeMutableBufferPointer { dst in
+                var s = 0, d = 0
+                while s < src.count {
+                    dst[d] = src[s]; dst[d + 1] = src[s + 1]; dst[d + 2] = src[s + 2]
+                    s += 4; d += 3
+                }
+            }
+        }
+        return DecodedPixels(width: width, height: height, isGray: false, bytes: rgb, iccProfile: space.copyICCData() as Data?)
+    }
+
     static func extract(url: URL, info: ImageInfo) throws -> DecodedPixels {
+        if info.format == .raw { return try extractRAW(url: url) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw EncodeError.decodeFailed("couldn't open \(url.lastPathComponent)")
         }

@@ -42,6 +42,7 @@ public enum ToolLocator {
         case .jpeg: return [.cjpegli]
         case .png: return [.oxipng, .pngquant]
         case .heic: return []
+        case .raw: return [.cjpegli]
         }
     }
 

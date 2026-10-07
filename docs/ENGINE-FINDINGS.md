@@ -132,3 +132,42 @@ What the validation changed:
   finds nothing worth keeping. The README says so rather than overselling.
 - A harness bug worth recording: run from a directory without `.tools/bin`, all 160 JPEG and PNG
   jobs failed with the clear message "The cjpegli encoder is missing from this install".
+
+## Camera RAW to JPEG (v1.1.0)
+
+**Development uses Apple's `CIRAWFilter`**, the engine behind Preview and Photos: no extra decoder to bundle,
+it handles iPhone ProRAW and Canon CR2 (and the other makers macOS supports), and the result matches what the
+Mac shows. Measured on a real ProRAW DNG and CR2: developed in 0.3-0.7 s. Two traps:
+
+- `CIRAWFilter` applies the camera's rotation itself (a CR2 stored 5472x3648 with orientation 8 comes out
+  3648x5472), so the pixels must not be rotated again. A test compares the JPEG's dimensions to the
+  orientation-adjusted native size.
+- ImageIO's dimensions for a RAW can describe an embedded preview, so the probe asks the RAW engine for the true size.
+
+**The ladder had to be re-measured.** A RAW render keeps all its detail and noise, so the JPEG ladder's
+distance of 1.0 scored only 82.8 (the same distance scores 85.6 on JPEG sources). Sweep on 12 RAWs, scored
+against the lossless render (ssimulacra2, size as % of the RAW):
+
+| jpegli | Size | Score median (min) |
+|---|---|---|
+| d 0.3 | 11.8% | 88.0 (84.6) |
+| d 0.4 | 9.6% | 87.0 (84.1) |
+| d 0.5 | 8.1% | 86.3 (83.7) |
+| **d 0.7** | **6.2%** | **85.2 (82.7)** |
+| d 1.0 | 4.5% | 83.3 (81.0) |
+| d 1.7 + 4:2:0 | 2.5% | 77.9 (74.5) |
+
+Chosen to match the JPEG modes' quality levels (88 / 85 / 77): High quality d 0.3, Balanced d 0.7,
+Smallest d 1.7 with 4:2:0. Full run of the shipped ladder over all 33 RAWs (99 conversions, none failed):
+
+| Mode | DNG size / score (min) | CR2 size / score (min) |
+|---|---|---|
+| High quality | 12.1% / 86.0 (81.3) | 11.8% / 88.3 (84.6) |
+| Balanced | 6.6% / 84.4 (80.3) | 5.7% / 85.3 (82.7) |
+| Smallest | 2.9% / 78.2 (75.1) | 2.3% / 76.8 (71.0) |
+
+Speed: a CR2 takes about 1 s, an iPhone ProRAW DNG 2-8 s (heavier development and, in this run, three runs at once).
+
+**Not found:** a way to generate a RAW for the test suite. ImageIO cannot write one, and a hand-built linear DNG
+(valid per exiftool and tiffutil) is not accepted by Apple's reader. The end-to-end RAW tests use a RAW found on the
+machine and skip when there is none.

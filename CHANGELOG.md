@@ -2,6 +2,19 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] — 2026-10-07
+
+### Added
+- **Camera RAW support.** Drop a RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 and others macOS opens) and it
+  is developed into the most efficient JPEG, saved as `name_optimized.jpg` beside the original. Developed
+  with Apple's own RAW engine, so the result matches Preview and Photos; rotation applied once, Display P3
+  colour kept, camera and location details left out. Measured on 19 iPhone ProRAW and 14 Canon CR2 files: High
+  quality 12% of the RAW's size, Balanced 6%, Smallest 2.5%, at the same perceptual quality levels as the JPEG modes.
+- ImageOptimizer now appears in Finder's "Open With" for RAW files.
+
+### Changed
+- "Move the original to the Trash" never applies to a RAW file: it is the negative.
+
 ## [1.0.1] — 2026-10-05
 
 ### Fixed

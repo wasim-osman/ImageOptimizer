@@ -67,6 +67,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
                 <string>public.png</string>
                 <string>public.heic</string>
                 <string>public.heif</string>
+                <string>public.camera-raw-image</string>
             </array>
         </dict>
     </array>
