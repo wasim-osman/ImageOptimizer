@@ -16,6 +16,8 @@ cd "$(dirname "$0")/.."
 MIN_MACOS="14.0"
 OXIPNG_TAG="v10.2.1"
 PNGQUANT_TAG="3.0.3"
+GIFSICLE_VERSION="1.97"
+GIFSICLE_SHA256="17d98f305372e8c6c47c3fa7c75a9ebd9a8dea0b47c739d0b3be6c30a1c1da7a"
 
 mkdir -p "${1:-.tools/bin}"
 OUT="$(cd "${1:-.tools/bin}" && pwd)"
@@ -44,9 +46,20 @@ git clone --quiet --depth 1 --branch "$PNGQUANT_TAG" --recursive https://github.
 cp "$WORK/pngquant/target/release/pngquant" "$OUT/pngquant"
 cp "$WORK/pngquant/COPYRIGHT" "$OUT/LICENSE.pngquant"
 
+echo "==> gifsicle $GIFSICLE_VERSION"
+curl -fsSL -o "$WORK/gifsicle.tar.gz" "https://www.lcdf.org/gifsicle/gifsicle-$GIFSICLE_VERSION.tar.gz"
+[ "$(shasum -a 256 "$WORK/gifsicle.tar.gz" | cut -d' ' -f1)" = "$GIFSICLE_SHA256" ] || { echo "gifsicle checksum mismatch"; exit 1; }
+mkdir "$WORK/gifsicle" && tar -xf "$WORK/gifsicle.tar.gz" -C "$WORK/gifsicle" --strip-components=1
+# Plain C, no external libraries. The viewer and diff tools are not built.
+(cd "$WORK/gifsicle" \
+  && CFLAGS="-O2 -mmacosx-version-min=$MIN_MACOS" LDFLAGS="-mmacosx-version-min=$MIN_MACOS" \
+     ./configure --disable-gifview --disable-gifdiff >/dev/null \
+  && make -j"$(sysctl -n hw.ncpu)" >/dev/null 2>&1)
+cp "$WORK/gifsicle/src/gifsicle" "$OUT/gifsicle"
+
 echo "==> Verifying every binary"
 status=0
-for tool in cjpegli oxipng pngquant; do
+for tool in cjpegli oxipng pngquant gifsicle; do
   bin="$OUT/$tool"
   [ -x "$bin" ] || { echo "  FAIL $tool was not produced"; status=1; continue; }
   bad="$(otool -L "$bin" | tail -n +2 | grep -v -E '^\s+(/usr/lib/|/System/)' || true)"

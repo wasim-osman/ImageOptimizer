@@ -171,3 +171,37 @@ Speed: a CR2 takes about 1 s, an iPhone ProRAW DNG 2-8 s (heavier development an
 **Not found:** a way to generate a RAW for the test suite. ImageIO cannot write one, and a hand-built linear DNG
 (valid per exiftool and tiffutil) is not accepted by Apple's reader. The end-to-end RAW tests use a RAW found on the
 machine and skip when there is none.
+
+## GIF (v1.2.0)
+
+**gifsicle 1.97**, built from the pinned tarball for macOS 14 (plain C, system libraries only, 252 KB). It
+keeps every frame, delay and the loop count (`--no-extensions` drops metadata extensions but not the loop).
+`-O3` stores only changed regions and searches palettes; `--lossy=N` adds dithering-tolerant compression.
+
+**What measuring found.** Over 20 real GIFs the lossless `-O3` result was a median 99.6% of the original: most
+GIFs (clip-art, UI animations) are already about as small as the format allows. The gains concentrate on
+screen recordings and photographic loops:
+
+| File | Lossless | lossy 10 (worst-frame score) | lossy 40 | lossy 80 |
+|---|---|---|---|---|
+| screen recording 1280x720 | 91% | 80% (81) | 67% (68) | 63% (57) |
+| terminal demo 1099 px | 82% | 77% (95) | 75% (94) | 74% (93) |
+| photo loop 600x800 | 100% | 91% (85) | 84% (70) | 79% (61) |
+
+Score = worst of six frames sampled by playback time (ssimulacra2; frames are compared by time, not index,
+because gifsicle merges identical frames and shifts the numbering: an early run that compared by index showed
+nonsense negative scores). Ladder: High quality lossless; Balanced lossy 10; Smallest lossy 40.
+
+**Lossy can grow a file** (a 565 KB GIF went to 150-170%), and often saved nothing beyond lossless. So a lossy
+run that doesn't beat 92% of the input is redone losslessly, and the lossless result is kept for any saving. Before
+this fallback Balanced discarded a 7% lossless saving that High quality kept.
+
+Corpus result after the fallback (written files only; all 16/16 kept size, timing and loop count):
+
+| Mode | Whole set | Worst-frame score (min) |
+|---|---|---|
+| High quality | 93.1% of bytes | 100 (exact) |
+| Balanced | 91.0% | 81.4 |
+| Smallest | 88.8% | 68.5 |
+
+Time: small GIFs 0.2-0.4 s; an 88 MB, 1912 px recording took 75 s and 212 MB of memory (two passes in lossy modes).

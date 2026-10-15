@@ -3,7 +3,7 @@
 import Foundation
 
 public enum Tool: String, Sendable, CaseIterable {
-    case cjpegli, oxipng, pngquant
+    case cjpegli, oxipng, pngquant, gifsicle
 }
 
 public enum ToolLocator {
@@ -43,6 +43,7 @@ public enum ToolLocator {
         case .png: return [.oxipng, .pngquant]
         case .heic: return []
         case .raw: return [.cjpegli]
+        case .gif: return [.gifsicle]
         }
     }
 

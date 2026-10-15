@@ -2,7 +2,7 @@
 
 ImageOptimizer's own source (`Sources/`, `Tests/`, `scripts/`) is **MIT**: see [LICENSE](LICENSE).
 
-**The release DMG also bundles three command-line encoders**, built from source by
+**The release DMG also bundles four command-line encoders**, built from source by
 [`scripts/build-tools.sh`](scripts/build-tools.sh). They are separate programs that the app runs as
 separate processes; they are not linked into the Swift code, and they are not covered by the MIT licence.
 Each licence's full text is in [`licenses/`](licenses/) and is copied into the app at
@@ -12,6 +12,7 @@ Each licence's full text is in [`licenses/`](licenses/) and is copied into the a
 
 | Program | Version | Licence | Source |
 |---|---|---|---|
+| **gifsicle** (GIF optimiser) | 1.97 | **GPL-2.0-only** | <https://github.com/kohler/gifsicle/tree/v1.97> (release tarball <https://www.lcdf.org/gifsicle/gifsicle-1.97.tar.gz>, sha256 pinned in the build script) |
 | **pngquant** (lossy PNG palette reduction) | 3.0.3 | **GPL-3.0-or-later** | <https://github.com/kornelski/pngquant/tree/3.0.3> |
 | **cjpegli** (JPEG encoder, from jpegli) | commit `031a007` | BSD-3-Clause | <https://github.com/google/jpegli/tree/031a0077f5799a6041004267fc12b956c1f52a20> |
 | **oxipng** (lossless PNG recompression) | 10.2.1 | MIT | <https://github.com/shssoichiro/oxipng/tree/v10.2.1> |
@@ -35,12 +36,13 @@ The exact crate names, versions and licences are generated from each project's l
 
 ## What the GPL means here
 
-pngquant and libimagequant are GPL-3.0-or-later, so distributing the DMG means distributing GPL
-binaries. This project meets that by:
+pngquant and libimagequant are GPL-3.0-or-later and gifsicle is GPL-2.0-only, so distributing the DMG means
+distributing GPL binaries. (They are separate programs run as separate processes and never linked together, so the two
+versions do not conflict.) This project meets that by:
 
-- shipping the full GPL-3.0 text ([`licenses/GPL-3.0.txt`](licenses/GPL-3.0.txt)) and pngquant's own
+- shipping the full GPL-2.0 text for gifsicle ([`licenses/GIFSICLE-COPYING.txt`](licenses/GIFSICLE-COPYING.txt)) and the full GPL-3.0 text ([`licenses/GPL-3.0.txt`](licenses/GPL-3.0.txt)) and pngquant's own
   notice ([`licenses/PNGQUANT-COPYRIGHT.txt`](licenses/PNGQUANT-COPYRIGHT.txt)) inside the app;
-- bundling **unmodified** upstream pngquant, built from the pinned tag above with no patches;
+- bundling **unmodified** upstream pngquant and gifsicle, built from the pinned tag above with no patches;
 - publishing the build script that reproduces the binary exactly, and linking the exact source tag, so the
   corresponding source is one `git clone --branch 3.0.3` away.
 

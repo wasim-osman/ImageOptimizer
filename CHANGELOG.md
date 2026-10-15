@@ -2,6 +2,21 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.0] — 2026-10-15
+
+### Added
+- **GIF support**, animated or still. Repacked with gifsicle: only what changes between frames is stored,
+  and the palette is searched for a smaller encoding. Every frame, every delay and the loop count are kept
+  (checked in tests, and across 20 real GIFs). High quality is lossless (frames identical); Balanced and
+  Smallest add light and stronger lossy compression, and fall back to the lossless result when lossy can't
+  beat the 92% bar, instead of discarding a real saving.
+- ImageOptimizer now appears in Finder's "Open With" for GIFs.
+
+### Honest numbers
+- Most GIFs on a typical machine are already tightly packed. Over 20 real GIFs: 16 shrank at all; the set fell
+  to 93% of its bytes lossless, 91% Balanced, 89% Smallest. Screen recordings and photo loops gain the most.
+  An 88 MB GIF takes about 75 s.
+
 ## [1.1.0] — 2026-10-07
 
 ### Added

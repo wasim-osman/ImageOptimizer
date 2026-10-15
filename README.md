@@ -4,7 +4,8 @@ A native macOS drag-and-drop image optimiser for Apple Silicon, and the sister a
 [VideoOptimizer](https://github.com/wasim-osman/VideoOptimizer).
 
 Drop an image on the window and it is re-encoded to the smallest file that still looks the same as the
-original, in the **same format**, saved next to the source as `name_optimized.jpg`. Drop a **camera RAW**
+original, in the **same format**, saved next to the source as `name_optimized.jpg`. Drop an **animated or still GIF** and it is repacked smaller, still a GIF, with every frame, delay and the loop
+count intact. Drop a **camera RAW**
 (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 and the rest macOS can open) and it is developed into the most
 efficient JPEG instead, saved as `name_optimized.jpg`. The RAW itself is never touched. Like VideoOptimizer, it
 refuses to make a file worse, and tells you why when it refuses.
@@ -21,6 +22,14 @@ Measured on 30 real JPEGs, 24 real PNGs and 8 real iPhone HEICs, scored for how 
 | PNG | Balanced | **35%** | score 88.6 |
 | PNG | High quality | 82%, **pixel-for-pixel identical** | exact |
 | HEIC | Balanced | 90% | score 83.9 |
+| GIF | Balanced | 91% of all bytes (see below) | worst frame ≥ 81 |
+
+**GIF is modest, and honest about it.** Measured on 20 real GIFs (screen recordings, clip-art animations, photo
+loops), scoring the worst of six frames sampled across each animation: most were already tightly packed, so
+**16 of 20 shrank at all, and the whole set fell to 93% of its bytes** losslessly, 91% in Balanced, 89% in Smallest.
+The wins are on screen recordings (a 4.6 MB recording went to 57%) and photographic loops; clip-art with a
+handful of colours has nothing left to remove. Lossy GIF compression never improved a file by much and sometimes
+made one bigger, so when it can't beat the bar the app silently keeps the lossless repack instead.
 
 **Camera RAW → JPEG**, measured on 19 iPhone ProRAW DNGs and 14 Canon CR2s (scored against the same
 development kept lossless):
@@ -60,16 +69,16 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   moved to the Trash, even with "Move the original to the Trash" on: it is the negative, and a JPEG can't
   be developed again.
 - **Refuses what it can't do safely**, and says why: animated images, CMYK, **portrait photos with depth
-  data** (a re-encode would delete the depth map), and formats other than JPEG, PNG, HEIC and camera RAW
-  (GIF, TIFF, WebP, AVIF). Forcing never overrides these.
+  data** (a re-encode would delete the depth map), and formats other than JPEG, PNG, GIF, HEIC and camera RAW
+  (TIFF, WebP, AVIF). Forcing never overrides these.
 
 ## Modes
 
-| Mode | JPEG | PNG | HEIC |
-|---|---|---|---|
-| **High quality** | very high quality | lossless (identical pixels) | very high quality |
-| **Balanced** (default) | looks the same | lossy palette reduction | looks the same |
-| **Smallest** | squeezes hardest | same as Balanced, slowest search | squeezes hardest |
+| Mode | JPEG | PNG | HEIC | GIF |
+|---|---|---|---|---|
+| **High quality** | very high quality | lossless (identical pixels) | very high quality | lossless (identical frames) |
+| **Balanced** (default) | looks the same | lossy palette reduction | looks the same | light lossy, else lossless |
+| **Smallest** | squeezes hardest | same as Balanced, slowest search | squeezes hardest | stronger lossy, else lossless |
 
 "Reduce PNG colours" in Settings turns lossy PNG off entirely.
 
@@ -112,7 +121,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  128 tests, against real files and the real encoders
+Tests/                  143 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 
@@ -124,6 +133,7 @@ quality rules are cheap to test. The encoders are separate programs run as separ
 | RAW | Apple's RAW engine develops the file, then **jpegli** encodes it |
 | JPEG | **jpegli**, ~13% smaller than Apple's encoder at equal quality |
 | PNG | **pngquant** (lossy palette reduction) then **oxipng** (lossless recompression). Apple's own PNG writer makes the median PNG 32% *bigger*. |
+| GIF | **gifsicle** (frame diffing, palette search, optional lossy) |
 | HEIC | Apple's encoder, in-process |
 
 The encoders are built from pinned sources by `scripts/build-tools.sh` rather than taken from Homebrew,
@@ -153,7 +163,9 @@ passes an explicit `-plugin-path` so its macros resolve; that flag is harmless w
 
 - **Not signed or notarised.** Gatekeeper warns on first launch.
 - **HEIC savings are small** (see above), and HDR photos need your confirmation and portrait photos are refused.
-- **JPEG, PNG, HEIC and camera RAW only.** Everything else is refused with a message.
+- **GIF is slow on big files**: an 88 MB screen recording took 75 seconds (it makes two passes in the lossy
+  modes) and saved 3%. Lossy GIF compression adds visible dithering noise; High quality stays exact.
+- **JPEG, PNG, GIF, HEIC and camera RAW only.** Everything else is refused with a message.
 - **RAW depends on your macOS.** Apple's decoder adds cameras with each release; a newer camera may say it
   can't be developed until you update macOS. Only iPhone ProRAW (DNG) and Canon (CR2) files were tested;
   Nikon, Sony, Fujifilm and the others go through the same Apple decoder but weren't available to try.

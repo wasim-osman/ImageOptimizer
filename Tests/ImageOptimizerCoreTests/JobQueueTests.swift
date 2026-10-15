@@ -180,14 +180,14 @@ final class JobQueueTests {
 
     // MARK: - Refusals
 
-    @Test("an animated GIF is unsupported, with the reason shown")
-    func gifUnsupported() async throws {
-        let gif = try Fixtures.animatedGIF(to: dir.appendingPathComponent("anim.gif"))
-        let queue = JobQueue()
-        let id = await queue.addJob(url: gif)
-        let job = try #require(await waitUntilIdle(queue).first { $0.id == id })
-        #expect(job.state == .unsupported)
-        #expect(job.error.contains("GIF"))
+    @Test("an animated PNG is still unsupported, with the reason shown")
+    func apngUnsupported() async throws {
+        // Only GIF animation is handled; any other animated format would be flattened to one frame.
+        var info = ImageInfo(format: .png, width: 64, height: 64, fileSize: 40_000)
+        info.frameCount = 4
+        let p = EncodePlanner().plan(info: info, inputURL: dir.appendingPathComponent("a.png"), settings: Settings())
+        guard case .refused(.unsupported(let why)) = p.outcome else { Issue.record("expected unsupported"); return }
+        #expect(why.contains("Animated"))
     }
 
     @Test("an already-squeezed JPEG is refused, and forcing it produces real output")

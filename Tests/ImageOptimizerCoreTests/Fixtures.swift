@@ -118,6 +118,28 @@ enum Fixtures {
         return url
     }
 
+    /// A GIF whose frames are each written whole (as ImageIO does), a square sliding over a fixed gradient,
+    /// with a real delay and loop count. Whole frames are what an optimiser can shrink by storing only what changed.
+    static func movingSquareGIF(to url: URL, frames: Int = 12, size: Int = 160, delay: Double = 0.08, loopCount: Int = 0) throws -> URL {
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, frames, nil) else {
+            throw NSError(domain: "Fixtures", code: 5)
+        }
+        CGImageDestinationSetProperties(dest, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: loopCount]] as CFDictionary)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        for i in 0..<frames {
+            guard let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw NSError(domain: "Fixtures", code: 6) }
+            let grad = CGGradient(colorsSpace: space, colors: [CGColor(red: 0.1, green: 0.3, blue: 0.7, alpha: 1), CGColor(red: 0.9, green: 0.8, blue: 0.2, alpha: 1)] as CFArray, locations: [0, 1])!
+            ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: size, y: size), options: [])
+            ctx.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1))
+            ctx.fill(CGRect(x: 4 + i * (size - 40) / max(1, frames - 1), y: size / 2 - 16, width: 32, height: 32))
+            let props = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay, kCGImagePropertyGIFUnclampedDelayTime: delay]]
+            CGImageDestinationAddImage(dest, ctx.makeImage()!, props as CFDictionary)
+        }
+        guard CGImageDestinationFinalize(dest) else { throw NSError(domain: "Fixtures", code: 7) }
+        return url
+    }
+
     /// A greyscale image (single channel).
     static func grayscale(width: Int = 320, height: Int = 240) -> CGImage {
         var rng = SeededRandom(state: 7)
@@ -310,4 +332,8 @@ extension Requirements {
         return best?.url
     }()
     static let rawAvailable = rawSample != nil
+}
+
+extension Requirements {
+    static let gifsicle = ToolLocator.url(for: .gifsicle) != nil
 }

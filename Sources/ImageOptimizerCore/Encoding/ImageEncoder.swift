@@ -26,6 +26,9 @@ public enum EncodeError: LocalizedError, Sendable, Equatable {
 public struct EncodeReport: Sendable, Equatable {
     /// Human-readable notes about what actually happened, e.g. a step that was skipped.
     public var notes: [String] = []
+    /// True when the file written is a lossless repack even though the plan asked for lossy (a lossy GIF
+    /// that saved too little falls back to lossless). The post-flight guard then keeps any real saving.
+    public var producedLossless = false
 }
 
 public struct ImageEncoder: Sendable {
@@ -60,6 +63,13 @@ public struct ImageEncoder: Sendable {
                 if result.produced { current = destination }
             case .oxipng(let level):
                 try await runOxipng(input: current, output: destination, level: level)
+                current = destination
+            case .gifsicle(let lossy):
+                let fellBack = try await runGifsicle(input: plan.inputURL, output: destination, lossy: lossy)
+                if fellBack {
+                    report.producedLossless = true
+                    report.notes.append("Lossy compression wouldn't have saved enough, so this GIF was repacked losslessly instead.")
+                }
                 current = destination
             case .heic(let quality):
                 try await runHEIC(input: plan.inputURL, output: destination, quality: quality, orientation: info.orientation)
@@ -130,6 +140,34 @@ public struct ImageEncoder: Sendable {
         let args = ["-o", "\(level)", "--strip", "safe", "--threads", "2", "--force", "--out", output.path, input.path]
         let result = await ProcessRunner.run(tool, arguments: args)
         try throwIfFailed(result, tool: "oxipng")
+    }
+
+    // MARK: - GIF (gifsicle)
+
+    /// Returns true when a lossy request fell back to a lossless result.
+    private func runGifsicle(input: URL, output: URL, lossy: Int?) async throws -> Bool {
+        guard let tool = ToolLocator.url(for: .gifsicle) else { throw EncodeError.toolMissing("gifsicle") }
+        // -O3 is the strongest frame-diffing and palette search. Comments and unknown extensions are
+        // dropped (the "essentials only" metadata rule); frames, delays and the loop count are kept.
+        func run(lossy: Int?) async throws {
+            var args = ["-O3", "--no-comments", "--no-names", "--no-extensions", "--no-warnings"]
+            if let lossy { args.append("--lossy=\(lossy)") }
+            args += [input.path, "-o", output.path]
+            try throwIfFailed(await ProcessRunner.run(tool, arguments: args), tool: "gifsicle")
+        }
+        try await run(lossy: lossy)
+        guard lossy != nil else { return false }
+        // Lossy costs quality, so it must earn it. Measured on real GIFs, lossy often saved nothing
+        // beyond what a lossless repack already does (and sometimes grew the file); when it falls short
+        // of the guard's bar, keep the lossless result instead of throwing the saving away.
+        func bytes(_ u: URL) -> Int64 { ((try? FileManager.default.attributesOfItem(atPath: u.path)[.size]) as? Int64) ?? .max }
+        let original = bytes(input)
+        if Double(bytes(output)) >= Double(original) * 0.92 {
+            try Task.checkCancellation(or: EncodeError.cancelled)
+            try await run(lossy: nil)
+            return true
+        }
+        return false
     }
 
     // MARK: - HEIC (Apple, in-process)

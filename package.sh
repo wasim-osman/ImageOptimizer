@@ -20,7 +20,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 echo "==> Encoder tools"
 ./scripts/build-tools.sh .tools/bin >/dev/null
-for t in cjpegli oxipng pngquant; do [ -x ".tools/bin/$t" ] || { echo "missing $t"; exit 1; }; done
+for t in cjpegli oxipng pngquant gifsicle; do [ -x ".tools/bin/$t" ] || { echo "missing $t"; exit 1; }; done
 
 echo "==> Building release binary"
 swift build -c release --product ImageOptimizerApp 2>&1 | tail -1
@@ -33,7 +33,7 @@ echo "==> Assembling $APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin" "$APP/Contents/Resources/licenses"
 cp .build/release/ImageOptimizerApp "$APP/Contents/MacOS/$APP_NAME"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-for t in cjpegli oxipng pngquant; do cp ".tools/bin/$t" "$APP/Contents/Resources/bin/$t"; done
+for t in cjpegli oxipng pngquant gifsicle; do cp ".tools/bin/$t" "$APP/Contents/Resources/bin/$t"; done
 cp licenses/* "$APP/Contents/Resources/licenses/"
 cp THIRD_PARTY_LICENSES.md LICENSE "$APP/Contents/Resources/"
 
@@ -65,6 +65,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
             <array>
                 <string>public.jpeg</string>
                 <string>public.png</string>
+                <string>com.compuserve.gif</string>
                 <string>public.heic</string>
                 <string>public.heif</string>
                 <string>public.camera-raw-image</string>
@@ -90,7 +91,7 @@ done < <(find "$APP" -type f -print0)
 [ "$fail" = 0 ] || { echo "BUNDLE VERIFICATION FAILED"; exit 1; }
 
 echo "==> Signing (ad-hoc)"
-for t in cjpegli oxipng pngquant; do codesign --force --sign - "$APP/Contents/Resources/bin/$t"; done
+for t in cjpegli oxipng pngquant gifsicle; do codesign --force --sign - "$APP/Contents/Resources/bin/$t"; done
 codesign --force --sign - "$APP"
 codesign --verify --strict --verbose=1 "$APP" 2>&1 | sed 's/^/    /'
 

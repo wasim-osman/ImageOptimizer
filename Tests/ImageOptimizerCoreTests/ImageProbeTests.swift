@@ -86,11 +86,14 @@ struct ImageProbeTests {
         #expect(try ImageProbe.probe(url: url).colorModel == .cmyk)
     }
 
-    @Test("an animated GIF is refused as an unsupported format, by name")
-    func gifRefused() throws {
+    @Test("an animated GIF is probed as a GIF with all its frames")
+    func animatedGIFProbed() throws {
         let d = try dir()
         let url = try Fixtures.animatedGIF(to: d.appendingPathComponent("anim.gif"))
-        #expect(throws: ProbeError.unsupportedFormat("GIF")) { _ = try ImageProbe.probe(url: url) }
+        let info = try ImageProbe.probe(url: url)
+        #expect(info.format == .gif)
+        #expect(info.frameCount == 2)
+        #expect(info.isAnimated)
     }
 
     @Test("TIFF is refused by name")

@@ -23,7 +23,7 @@ public struct BloatGuard: Sendable {
         case (.heic, .balanced): return 0.45
         case (.heic, .smallest): return 0.35
         // A RAW file is a sensor dump, not an encoded picture: it can never be "already optimised".
-        case (.png, _), (.raw, _): return nil
+        case (.png, _), (.raw, _), (.gif, _): return nil
         }
     }
 

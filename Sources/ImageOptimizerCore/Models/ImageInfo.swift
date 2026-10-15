@@ -7,6 +7,8 @@ public enum ImageFormat: String, Sendable, Codable, Equatable, CaseIterable {
     case jpeg, png, heic
     /// Camera RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 ...). Never written: it is developed into a JPEG.
     case raw
+    /// GIF, animated or not. Optimised with gifsicle and written back as a GIF.
+    case gif
 
     public var displayName: String {
         switch self {
@@ -14,6 +16,7 @@ public enum ImageFormat: String, Sendable, Codable, Equatable, CaseIterable {
         case .png: return "PNG"
         case .heic: return "HEIC"
         case .raw: return "RAW"
+        case .gif: return "GIF"
         }
     }
 }

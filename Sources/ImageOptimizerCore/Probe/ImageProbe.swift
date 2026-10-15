@@ -14,7 +14,7 @@ public enum ProbeError: LocalizedError, Sendable, Equatable {
         switch self {
         case .unreadable(let why): return "Couldn't read this image: \(why)"
         case .unsupportedFormat(let name):
-            return "\(name) isn't supported yet. ImageOptimizer handles JPEG, PNG, HEIC and camera RAW."
+            return "\(name) isn't supported yet. ImageOptimizer handles JPEG, PNG, GIF, HEIC and camera RAW."
         }
     }
 }
@@ -22,7 +22,6 @@ public enum ProbeError: LocalizedError, Sendable, Equatable {
 public enum ImageProbe {
     /// Friendly names for formats we recognise but refuse, so the message says what the file is.
     private static let refusedNames: [String: String] = [
-        "com.compuserve.gif": "GIF",
         "public.tiff": "TIFF",
         "org.webmproject.webp": "WebP",
         "public.avif": "AVIF",
@@ -45,6 +44,7 @@ public enum ImageProbe {
         switch type {
         case "public.jpeg": format = .jpeg
         case "public.png": format = .png
+        case "com.compuserve.gif": format = .gif
         case "public.heic", "public.heif": format = .heic
         default:
             throw ProbeError.unsupportedFormat(refusedNames[type] ?? type)
