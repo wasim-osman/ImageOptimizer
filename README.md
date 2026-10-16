@@ -7,7 +7,7 @@ Drop an image on the window and it is re-encoded to the smallest file that still
 original, in the **same format**, saved next to the source as `name_optimized.jpg`. Drop an **animated or still GIF** and it is repacked smaller, still a GIF, with every frame, delay and the loop
 count intact. Drop a **camera RAW**
 (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2 and the rest macOS can open) and it is developed into the most
-efficient JPEG instead, saved as `name_optimized.jpg`. The RAW itself is never touched. Like VideoOptimizer, it
+efficient JPEG instead, saved as `name_optimized.jpg`. The RAW itself is never touched. Need a file under a size limit (Discord's 10 MB, an email cap)? **Fit to size** keeps shrinking until it fits. Like VideoOptimizer, it
 refuses to make a file worse, and tells you why when it refuses.
 
 ## What you get
@@ -69,7 +69,7 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   version.** "Remove all" gives a bare file. The picture is not touched by this (checked pixel for pixel), the
   rotation and colour profile are always kept, and if a removed group can't be verified as gone, the file is
   written with no metadata at all rather than risk leaking it. Keeping metadata makes a file a few KB larger.
-- **Never makes a file worse.** A source that's already efficient is refused, and a result that isn't
+- **Never makes a file worse.** (Fit to size is the exception by design: it trades quality or resolution for the size you asked for, and always keeps the best quality that fits.) A source that's already efficient is refused, and a result that isn't
   meaningfully smaller is discarded and never written. Drop the same refused file again and it asks
   **"Optimise anyway?"**.
 - **Asks before removing an HDR layer.** Most iPhone photos carry one. Re-encoding keeps how the photo
@@ -98,6 +98,7 @@ left alone. Command line: `--mode fit --target-mb 10`.
 | **High quality** | very high quality | lossless (identical pixels) | very high quality | lossless (identical frames) |
 | **Balanced** (default) | looks the same | lossy palette reduction | looks the same | light lossy, scaled to fit 1280 px, else lossless |
 | **Smallest** | squeezes hardest | same as Balanced, slowest search | squeezes hardest | stronger lossy, scaled to fit 960 px, else lossless |
+| **Fit to size** | best quality that fits the target, else smaller | lossless, then fewer colours, then smaller | best quality that fits, else smaller | scaled down to the largest size that fits |
 
 "Reduce PNG colours" in Settings turns lossy PNG off entirely.
 
@@ -189,6 +190,7 @@ passes an explicit `-plugin-path` so its macros resolve; that flag is harmless w
   can't be developed until you update macOS. Only iPhone ProRAW (DNG) and Canon (CR2) files were tested;
   Nikon, Sony, Fujifilm and the others go through the same Apple decoder but weren't available to try.
   The JPEG is 8-bit, which is what the JPEG format stores.
+- **Fit to size shrinks the picture when it must.** If quality alone can't reach the target, the image is scaled down (it never goes below about 200 px, GIF 120 px; past that it fails with a message instead of writing a file that is too big). Only the 88 MB map recording and a handful of photos, PNGs and HEICs were tried; the smallest target is 0.1 MB.
 - Lossy PNG can show banding on smooth gradients in rare cases; use High quality mode to stay lossless.
 - The interactive dialogs (Optimise anyway, quit confirmation), the double-click picker and the Settings
   window are AppKit code with no automated UI test. They were verified by build, launch and, where possible,
