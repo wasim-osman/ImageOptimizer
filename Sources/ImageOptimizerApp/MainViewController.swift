@@ -22,8 +22,8 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
 
     init() {
         let settings = SettingsStore.shared.settings
-        queueConcurrency = settings.concurrency
-        queue = JobQueue(maxConcurrent: settings.concurrency, settings: settings)
+        queueConcurrency = settings.effectiveConcurrency
+        queue = JobQueue(maxConcurrent: settings.effectiveConcurrency, settings: settings)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -132,7 +132,7 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     /// `JobQueue` fixes its concurrency at init, so a changed setting takes effect on the next drop
     /// that arrives while nothing is running.
     private func adoptPendingConcurrencyIfIdle() async {
-        let desired = SettingsStore.shared.settings.concurrency
+        let desired = SettingsStore.shared.settings.effectiveConcurrency
         guard desired != queueConcurrency, await queue.isIdle else { return }
         queueConcurrency = desired
         queue = JobQueue(maxConcurrent: desired, settings: SettingsStore.shared.settings)

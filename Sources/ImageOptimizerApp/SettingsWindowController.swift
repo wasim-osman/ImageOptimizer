@@ -18,7 +18,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let pngLossy = NSButton(checkboxWithTitle: "Reduce PNG colours (much smaller, near-identical)", target: nil, action: nil)
 
     private let concurrency = NSStepper()
-    private let concurrencyLabel = NSTextField(labelWithString: "4")
+    private let concurrencyLabel = NSTextField(labelWithString: "Automatic")
     private let preserveDates = NSButton(checkboxWithTitle: "Keep the original file's dates", target: nil, action: nil)
     private let deleteSource = NSButton(checkboxWithTitle: "Move the original to the Trash after optimising (never RAW files)", target: nil, action: nil)
 
@@ -108,8 +108,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func advancedTab() -> NSView {
-        concurrency.minValue = 1
-        concurrency.maxValue = 8
+        concurrency.minValue = 0
+        concurrency.maxValue = Double(max(1, ProcessInfo.processInfo.activeProcessorCount))
         concurrency.increment = 1
         concurrency.valueWraps = false
         concurrency.target = self
@@ -167,7 +167,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         modeCaption.stringValue = Self.captions[s.encoderMode] ?? ""
         pngLossy.state = s.pngLossy ? .on : .off
         concurrency.integerValue = s.concurrency
-        concurrencyLabel.stringValue = "\(s.concurrency)"
+        concurrencyLabel.stringValue = Self.concurrencyText(s.concurrency)
         preserveDates.state = s.preserveDates ? .on : .off
         deleteSource.state = s.deleteSource ? .on : .off
         updateEnabledStates()
@@ -219,8 +219,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         folderLabel.stringValue = url.path
     }
 
+    private static func concurrencyText(_ n: Int) -> String {
+        n == 0 ? "Automatic (\(ProcessInfo.processInfo.activeProcessorCount) cores)" : "\(n)"
+    }
+
     @objc private func concurrencyChanged() {
-        concurrencyLabel.stringValue = "\(concurrency.integerValue)"
+        concurrencyLabel.stringValue = Self.concurrencyText(concurrency.integerValue)
         commitFields()
     }
 

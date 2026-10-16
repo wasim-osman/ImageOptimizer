@@ -21,6 +21,8 @@ final class SettingsStore {
         if let data = UserDefaults.standard.data(forKey: "settings.v1"),
            let decoded = try? JSONDecoder().decode(Settings.self, from: data) {
             settings = decoded
+            // 4 was the old fixed default, not a choice; it left most cores idle. Move it to automatic.
+            if settings.concurrency == 4 { settings.concurrency = 0 }
         } else {
             settings = Settings()
         }

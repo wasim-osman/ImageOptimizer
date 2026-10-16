@@ -2,6 +2,15 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.2] — 2026-10-16
+
+### Changed
+- **Uses every CPU core.** The number of images converted at once was fixed at 4 (max 8), and each encoder is
+  single-threaded per file, so a 12-core Mac sat mostly idle. It is now Automatic (one per core) by default, and
+  Settings > Advanced can still set a fixed number up to the core count. A saved setting of 4 (the old default)
+  moves to Automatic. Measured on 14 RAW files: 6.1 s with 1 at a time, 3.0 s with 4, 1.6 s with 12.
+- A single file still uses one core, because gifsicle, cjpegli and pngquant can't split one image.
+
 ## [1.2.1] — 2026-10-16
 
 ### Changed

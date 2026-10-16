@@ -5,7 +5,7 @@
 //     --lossless-png                     never use lossy palette reduction
 //     --force                            skip the size guards ("convert anyway")
 //     --out <folder>                     write results there instead of beside the source
-//     --concurrency N                    (default 4)
+//     --concurrency N                    (default: one per CPU core)
 //     --plan                             show what would happen, encode nothing
 
 import Foundation
@@ -88,7 +88,7 @@ if planOnly {
     exit(0)
 }
 
-let queue = JobQueue(maxConcurrent: settings.concurrency, settings: settings)
+let queue = JobQueue(maxConcurrent: settings.effectiveConcurrency, settings: settings)
 let started = Date()
 for url in files { await queue.addJob(url: url, forceEncode: force) }
 while !(await queue.isIdle) { try? await Task.sleep(for: .milliseconds(100)) }

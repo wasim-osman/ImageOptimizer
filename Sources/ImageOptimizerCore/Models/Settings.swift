@@ -41,7 +41,10 @@ public struct Settings: Sendable, Codable, Equatable {
     /// Moves the original to the Trash after a successful conversion.
     public var deleteSource: Bool = false
     public var preserveDates: Bool = true
-    public var concurrency: Int = 4
+    /// Images converted at once. 0 means automatic: one per CPU core. Every encoder here is single-threaded
+    /// per file (gifsicle, cjpegli, pngquant), so parallel files are the only way to use more than one core.
+    public var concurrency: Int = 0
+    public var effectiveConcurrency: Int { concurrency > 0 ? concurrency : max(1, ProcessInfo.processInfo.activeProcessorCount) }
 
     public init() {}
 }
