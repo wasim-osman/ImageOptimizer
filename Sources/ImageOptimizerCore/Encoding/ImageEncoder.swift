@@ -64,8 +64,8 @@ public struct ImageEncoder: Sendable {
             case .oxipng(let level):
                 try await runOxipng(input: current, output: destination, level: level)
                 current = destination
-            case .gifsicle(let lossy):
-                let fellBack = try await runGifsicle(input: plan.inputURL, output: destination, lossy: lossy)
+            case .gifsicle(let lossy, let maxSide):
+                let fellBack = try await runGifsicle(input: plan.inputURL, output: destination, lossy: lossy, maxSide: maxSide)
                 if fellBack {
                     report.producedLossless = true
                     report.notes.append("Lossy compression wouldn't have saved enough, so this GIF was repacked losslessly instead.")
@@ -145,18 +145,20 @@ public struct ImageEncoder: Sendable {
     // MARK: - GIF (gifsicle)
 
     /// Returns true when a lossy request fell back to a lossless result.
-    private func runGifsicle(input: URL, output: URL, lossy: Int?) async throws -> Bool {
+    private func runGifsicle(input: URL, output: URL, lossy: Int?, maxSide: Int?) async throws -> Bool {
         guard let tool = ToolLocator.url(for: .gifsicle) else { throw EncodeError.toolMissing("gifsicle") }
         // -O3 is the strongest frame-diffing and palette search. Comments and unknown extensions are
         // dropped (the "essentials only" metadata rule); frames, delays and the loop count are kept.
         func run(lossy: Int?) async throws {
             var args = ["-O3", "--no-comments", "--no-names", "--no-extensions", "--no-warnings"]
             if let lossy { args.append("--lossy=\(lossy)") }
+            if let maxSide { args += ["--resize-fit", "\(maxSide)x\(maxSide)"] }
             args += [input.path, "-o", output.path]
             try throwIfFailed(await ProcessRunner.run(tool, arguments: args), tool: "gifsicle")
         }
         try await run(lossy: lossy)
-        guard lossy != nil else { return false }
+        // A resized GIF is smaller because it is smaller, not because of lossy, so the fallback doesn't apply.
+        guard lossy != nil, maxSide == nil else { return false }
         // Lossy costs quality, so it must earn it. Measured on real GIFs, lossy often saved nothing
         // beyond what a lossless repack already does (and sometimes grew the file); when it falls short
         // of the guard's bar, keep the lossless result instead of throwing the saving away.

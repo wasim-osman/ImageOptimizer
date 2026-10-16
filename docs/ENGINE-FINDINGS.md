@@ -205,3 +205,23 @@ Corpus result after the fallback (written files only; all 16/16 kept size, timin
 | Smallest | 88.8% | 68.5 |
 
 Time: small GIFs 0.2-0.4 s; an 88 MB, 1912 px recording took 75 s and 212 MB of memory (two passes in lossy modes).
+
+### Big GIFs: resolution is the only lever (v1.2.1)
+
+A 1912x1197, 446-frame, 88 MB map recording (every frame a pan or zoom, so nearly every pixel changes) over a
+100-frame slice, as bytes of the lossless `-O3` result (15.6 MB):
+
+| Option | Bytes | Worst-frame ssim2 |
+|---|---|---|
+| lossy 40 / 100 / 200 | 99.98% / 99.9% / 99.4% | not worth scoring |
+| 128 colours + lossy 80 | 81% | 70.7 |
+| 64 colours | 71% | 52.7 |
+| 32 colours | 51% | 37 |
+| ffmpeg palettegen/paletteuse (any dither) | 103-119% | n/a, larger |
+| **fit 1600 px** | 79% | n/a (resized) |
+| **fit 1280 px** | **54%** | n/a |
+| **fit 960 px** | **33%** | n/a |
+
+Lossy GIF compression saves nothing when frames have no repeated pixels, and fewer colours wreck a photographic
+map. So Balanced caps the longer side at 1280 and Smallest at 960; a GIF within the cap is untouched. The full
+file: Balanced 47 MB in 68 s, Smallest 28.5 MB in 44 s.

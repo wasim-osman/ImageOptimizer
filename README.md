@@ -31,6 +31,13 @@ The wins are on screen recordings (a 4.6 MB recording went to 57%) and photograp
 handful of colours has nothing left to remove. Lossy GIF compression never improved a file by much and sometimes
 made one bigger, so when it can't beat the bar the app silently keeps the lossless repack instead.
 
+**Big GIFs are also scaled down.** A panning screen recording changes nearly every pixel in every frame, so
+nothing lossless or lossy touches it (an 88 MB, 1912 px map recording: lossy 40 saved 0.2%, and cutting to 64
+colours scored 53 out of 100). Resolution is the only lever that works, so **Balanced fits a GIF within
+1280 px on its longer side and Smallest within 960 px**; that recording came out at 47 MB and 28.5 MB, with every
+frame, the timing and the loop count unchanged. GIFs already within the cap are not resized, and High quality
+never resizes.
+
 **Camera RAW → JPEG**, measured on 19 iPhone ProRAW DNGs and 14 Canon CR2s (scored against the same
 development kept lossless):
 
@@ -77,8 +84,8 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
 | Mode | JPEG | PNG | HEIC | GIF |
 |---|---|---|---|---|
 | **High quality** | very high quality | lossless (identical pixels) | very high quality | lossless (identical frames) |
-| **Balanced** (default) | looks the same | lossy palette reduction | looks the same | light lossy, else lossless |
-| **Smallest** | squeezes hardest | same as Balanced, slowest search | squeezes hardest | stronger lossy, else lossless |
+| **Balanced** (default) | looks the same | lossy palette reduction | looks the same | light lossy, scaled to fit 1280 px, else lossless |
+| **Smallest** | squeezes hardest | same as Balanced, slowest search | squeezes hardest | stronger lossy, scaled to fit 960 px, else lossless |
 
 "Reduce PNG colours" in Settings turns lossy PNG off entirely.
 
@@ -121,7 +128,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  143 tests, against real files and the real encoders
+Tests/                  145 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 
@@ -163,8 +170,8 @@ passes an explicit `-plugin-path` so its macros resolve; that flag is harmless w
 
 - **Not signed or notarised.** Gatekeeper warns on first launch.
 - **HEIC savings are small** (see above), and HDR photos need your confirmation and portrait photos are refused.
-- **GIF is slow on big files**: an 88 MB screen recording took 75 seconds (it makes two passes in the lossy
-  modes) and saved 3%. Lossy GIF compression adds visible dithering noise; High quality stays exact.
+- **GIF is slow on big files**: an 88 MB screen recording took 44 to 68 seconds (Smallest and Balanced, which
+  resize it). Lossy GIF compression adds visible dithering noise; High quality stays exact.
 - **JPEG, PNG, GIF, HEIC and camera RAW only.** Everything else is refused with a message.
 - **RAW depends on your macOS.** Apple's decoder adds cameras with each release; a newer camera may say it
   can't be developed until you update macOS. Only iPhone ProRAW (DNG) and Canon (CR2) files were tested;

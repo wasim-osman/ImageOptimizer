@@ -2,6 +2,14 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.1] — 2026-10-16
+
+### Changed
+- **Balanced and Smallest scale big GIFs down** to fit 1280 px and 960 px on the longer side (never up, and
+  never in High quality). Reported on an 88 MB, 1912 px, 446-frame screen recording, where lossy compression
+  saved 0.2% and a palette cut cost too much quality: it now comes out at 47 MB (Balanced) and 28.5 MB
+  (Smallest), with every frame, the timing and the loop count unchanged.
+
 ## [1.2.0] — 2026-10-15
 
 ### Added

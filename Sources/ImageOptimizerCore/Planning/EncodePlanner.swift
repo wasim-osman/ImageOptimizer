@@ -12,8 +12,10 @@ public enum EncodeStep: Sendable, Equatable {
     case oxipng(level: Int)
     /// Apple's HEVC encoder, in-process. Orientation and colour profile are carried across.
     case heic(quality: Double)
-    /// `lossy` nil means lossless: identical frames, only repacked.
-    case gifsicle(lossy: Int?)
+    /// `lossy` nil means lossless: identical frames, only repacked. `maxSide`, when set, shrinks the
+    /// GIF so its longer side fits (never enlarges); a screen recording is mostly pixels, so resolution is
+    /// the only thing that makes it much smaller.
+    case gifsicle(lossy: Int?, maxSide: Int?)
 }
 
 public enum Refusal: Sendable, Equatable {
@@ -156,15 +158,20 @@ public struct EncodePlanner: Sendable {
         case .gif:
             // Measured on real GIFs, scoring the worst sampled frame of each (ssimulacra2, 100 = identical):
             // lossy 10 stayed >= 81 on every file, 20 fell to 75, 40 to 68. Lossless is exact.
+            // Neither lossy nor a palette cut shrinks a panning screen recording (a 1912 px map recording: lossy
+            // 40 saved 0.2%, 64 colours scored ssim2 53), but its resolution does: a 1280 px cap leaves 54% of the
+            // bytes and a 960 px cap 33%. So Balanced and Smallest cap the longer side; High quality never resizes.
             let lossy: Int?
+            let cap: Int?
             switch mode {
-            case .highQuality: lossy = nil
-            case .balanced: lossy = 10
-            case .smallest: lossy = 40
+            case .highQuality: lossy = nil; cap = nil
+            case .balanced: lossy = 10; cap = 1280
+            case .smallest: lossy = 40; cap = 960
             }
-            steps = [.gifsicle(lossy: lossy)]
+            let maxSide = cap.flatMap { max(info.displayWidth, info.displayHeight) > $0 ? $0 : nil }
+            steps = [.gifsicle(lossy: lossy, maxSide: maxSide)]
             lossless = lossy == nil
-            note = lossy.map { "gifsicle lossy \($0)" } ?? "gifsicle lossless"
+            note = (lossy.map { "gifsicle lossy \($0)" } ?? "gifsicle lossless") + (maxSide.map { ", resized to fit \($0) px" } ?? "")
         case .heic:
             let quality: Double
             switch mode {

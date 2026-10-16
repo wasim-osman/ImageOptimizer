@@ -26,9 +26,20 @@ struct GifPlanningTests {
 
     @Test("the ladder: lossless, lossy 10, lossy 40")
     func ladder() {
-        #expect(plan(gif()) { $0.encoderMode = .highQuality }.steps == [.gifsicle(lossy: nil)])
-        #expect(plan(gif()) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10)])
-        #expect(plan(gif()) { $0.encoderMode = .smallest }.steps == [.gifsicle(lossy: 40)])
+        #expect(plan(gif()) { $0.encoderMode = .highQuality }.steps == [.gifsicle(lossy: nil, maxSide: nil)])
+        #expect(plan(gif()) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10, maxSide: nil)])
+        #expect(plan(gif()) { $0.encoderMode = .smallest }.steps == [.gifsicle(lossy: 40, maxSide: nil)])
+    }
+
+    @Test("a GIF wider than the cap is shrunk to fit in Balanced (1280) and Smallest (960); High quality and small GIFs never are")
+    func caps() {
+        let big = { (i: inout ImageInfo) in i.width = 1912; i.height = 1197 }
+        #expect(plan(gif(big)) { $0.encoderMode = .highQuality }.steps == [.gifsicle(lossy: nil, maxSide: nil)])
+        #expect(plan(gif(big)) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10, maxSide: 1280)])
+        #expect(plan(gif(big)) { $0.encoderMode = .smallest }.steps == [.gifsicle(lossy: 40, maxSide: 960)])
+        // Exactly at the cap is left alone, and a tall one is measured on its longer side.
+        #expect(plan(gif({ $0.width = 1280; $0.height = 720 })) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10, maxSide: nil)])
+        #expect(plan(gif({ $0.width = 700; $0.height = 1500 })) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10, maxSide: 1280)])
     }
 
     @Test("only high quality is lossless, which lets the post-flight guard keep a small saving")
@@ -146,6 +157,20 @@ final class GifEndToEndTests {
             let a = try #require(frame(src, i)), b = try #require(frame(out, i))
             #expect(Fixtures.meanDifference(a, b) < 4, "frame \(i) drifted")
         }
+    }
+
+    @Test("a big GIF is resized to the cap in Balanced, with every frame, the timing and the loop count kept, and not at all in High quality")
+    func resized() async throws {
+        let src = try unoptimised(try Fixtures.movingSquareGIF(to: dir.appendingPathComponent("big.gif"), frames: 5, size: 1500, loopCount: 2))
+        let before = try #require(shape(src))
+        let (out, _) = try await optimise(src, .balanced)
+        let after = try #require(shape(out))
+        #expect(max(after.width, after.height) == 1280, "\(after.width)x\(after.height)")
+        #expect(after.width == after.height, "aspect ratio changed")
+        #expect(after.totalDelay == before.totalDelay && after.loop == before.loop)
+        let (kept, _) = try await optimise(src, .highQuality)
+        let k = try #require(shape(kept))
+        #expect(k.width == 1500 && k.height == 1500)
     }
 
     @Test("a loop count of 'forever' and of 'once' both survive")
