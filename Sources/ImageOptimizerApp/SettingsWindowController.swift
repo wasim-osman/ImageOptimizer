@@ -17,13 +17,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let modeCaption = NSTextField(wrappingLabelWithString: "")
     private let pngLossy = NSButton(checkboxWithTitle: "Reduce PNG colours (much smaller, near-identical)", target: nil, action: nil)
 
+    private var metadataBoxes: [MetadataCategory: NSButton] = [:]
     private let concurrency = NSStepper()
     private let concurrencyLabel = NSTextField(labelWithString: "Automatic")
     private let preserveDates = NSButton(checkboxWithTitle: "Keep the original file's dates", target: nil, action: nil)
     private let deleteSource = NSButton(checkboxWithTitle: "Move the original to the Trash after optimising (never RAW files)", target: nil, action: nil)
 
     convenience init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 330),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 470),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
@@ -40,7 +41,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func buildTabs() -> NSView {
         let tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
-        for (title, content) in [("General", generalTab()), ("Quality", qualityTab()), ("Advanced", advancedTab())] {
+        for (title, content) in [("General", generalTab()), ("Quality", qualityTab()), ("Metadata", metadataTab()), ("Advanced", advancedTab())] {
             let item = NSTabViewItem()
             item.label = title
             item.view = content
@@ -107,6 +108,72 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return grid([("Optimise for:", encoderMode), ("", modeCaption), ("PNG:", pngLossy)])
     }
 
+    /// One checkbox per group of embedded metadata. Ticked means removed from the optimised copy.
+    private func metadataTab() -> NSView {
+        let intro = NSTextField(wrappingLabelWithString: "Choose what to remove from the optimised copy. Anything left unticked is kept. "
+            + "The original file is never changed. Applies to images added from now on.")
+        intro.font = .systemFont(ofSize: 11)
+        intro.textColor = .secondaryLabelColor
+        intro.preferredMaxLayoutWidth = 420
+        let heading = NSTextField(labelWithString: "Remove:")
+        heading.font = .boldSystemFont(ofSize: 12)
+
+        var rows: [NSView] = [intro, heading]
+        for category in MetadataCategory.allCases {
+            let box = NSButton(checkboxWithTitle: category.displayName, target: self, action: #selector(commitFields))
+            box.identifier = NSUserInterfaceItemIdentifier(category.rawValue)
+            metadataBoxes[category] = box
+            let caption = NSTextField(labelWithString: category.detail)
+            caption.font = .systemFont(ofSize: 10)
+            caption.textColor = .tertiaryLabelColor
+            let indent = NSStackView(views: [NSView(), caption])
+            indent.orientation = .horizontal
+            indent.views[0].widthAnchor.constraint(equalToConstant: 18).isActive = true
+            let item = NSStackView(views: [box, indent])
+            item.orientation = .vertical
+            item.alignment = .leading
+            item.spacing = 1
+            rows.append(item)
+        }
+        let all = NSButton(title: "Remove all", target: self, action: #selector(removeAllMetadata))
+        let locationOnly = NSButton(title: "Location only", target: self, action: #selector(removeLocationOnly))
+        let none = NSButton(title: "Keep all", target: self, action: #selector(keepAllMetadata))
+        for b in [all, locationOnly, none] { b.bezelStyle = .rounded }
+        let buttons = NSStackView(views: [all, locationOnly, none])
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+        rows.append(buttons)
+        let note = NSTextField(wrappingLabelWithString: "Keeping metadata makes a file a little larger. The picture's rotation and colour profile are always kept.")
+        note.font = .systemFont(ofSize: 10)
+        note.textColor = .tertiaryLabelColor
+        note.preferredMaxLayoutWidth = 420
+        rows.append(note)
+
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 7
+        stack.setCustomSpacing(12, after: intro)
+        stack.setCustomSpacing(12, after: rows[rows.count - 3])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 18),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 14),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -18),
+        ])
+        return container
+    }
+
+    private func setRemoved(_ removed: Set<MetadataCategory>) {
+        for (category, box) in metadataBoxes { box.state = removed.contains(category) ? .on : .off }
+        commitFields()
+    }
+    @objc private func removeAllMetadata() { setRemoved(Set(MetadataCategory.allCases)) }
+    @objc private func removeLocationOnly() { setRemoved(MetadataCategory.defaultRemoved) }
+    @objc private func keepAllMetadata() { setRemoved([]) }
+
     private func advancedTab() -> NSView {
         concurrency.minValue = 0
         concurrency.maxValue = Double(max(1, ProcessInfo.processInfo.activeProcessorCount))
@@ -168,6 +235,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         pngLossy.state = s.pngLossy ? .on : .off
         concurrency.integerValue = s.concurrency
         concurrencyLabel.stringValue = Self.concurrencyText(s.concurrency)
+        for (category, box) in metadataBoxes { box.state = s.removeMetadata.contains(category) ? .on : .off }
         preserveDates.state = s.preserveDates ? .on : .off
         deleteSource.state = s.deleteSource ? .on : .off
         updateEnabledStates()
@@ -181,6 +249,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             s.encoderMode = Self.modes[max(0, encoderMode.selectedSegment)]
             s.pngLossy = pngLossy.state == .on
             s.concurrency = concurrency.integerValue
+            s.removeMetadata = Set(metadataBoxes.filter { $0.value.state == .on }.map(\.key))
             s.preserveDates = preserveDates.state == .on
             s.deleteSource = deleteSource.state == .on
         }

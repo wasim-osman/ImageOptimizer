@@ -2,6 +2,24 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.0] — 2026-10-16
+
+### Added
+- **Choose which metadata to remove.** Settings > Metadata has a tick box per group: location, date and time,
+  camera and lens, exposure settings, author/copyright/software, titles/descriptions/keywords, and everything else,
+  with "Remove all", "Location only" and "Keep all" buttons. The rest of the source's metadata is now kept
+  instead of always being dropped. Works for JPEG, HEIC, PNG and the JPEG made from a RAW.
+- CLI: `--remove-metadata all|none|location,date,camera,exposure,author,description,other`.
+
+### Changed
+- **Default:** only the location is removed (it used to be everything). Settings saved by an earlier version get
+  the same default, so an upgrade never starts leaking the location. To get the old behaviour, tick "Remove all".
+- Settings files from older versions with missing keys now load instead of being reset.
+
+### Safety
+- The picture is untouched by the metadata step (identical pixels, same rotation and colour profile). If a removed
+  group can't be verified as gone, the file is written with no metadata at all.
+
 ## [1.2.3] — 2026-10-16
 
 ### Changed

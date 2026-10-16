@@ -193,10 +193,18 @@ extension Fixtures {
             kCGImagePropertyExifDictionary: [
                 kCGImagePropertyExifDateTimeOriginal: "2026:01:02 03:04:05",
                 kCGImagePropertyExifLensModel: "Test Lens 1.0",
+                kCGImagePropertyExifExposureTime: 0.004,
+                kCGImagePropertyExifFNumber: 1.8,
+                kCGImagePropertyExifISOSpeedRatings: [200],
+                kCGImagePropertyExifUserComment: "a private note",
             ],
             kCGImagePropertyTIFFDictionary: [
                 kCGImagePropertyTIFFMake: "TestCam",
                 kCGImagePropertyTIFFModel: "Model Z",
+                kCGImagePropertyTIFFArtist: "A. Photographer",
+                kCGImagePropertyTIFFCopyright: "(c) Someone",
+                kCGImagePropertyTIFFSoftware: "TestEditor 9",
+                kCGImagePropertyTIFFImageDescription: "A holiday photo",
             ],
             kCGImagePropertyGPSDictionary: [
                 kCGImagePropertyGPSLatitude: 43.6532, kCGImagePropertyGPSLatitudeRef: "N",

@@ -109,11 +109,12 @@ final class RawEndToEndTests {
         #expect(info.frameCount == 1)
     }
 
-    @Test("a real RAW becomes a much smaller, upright JPEG with its colour profile and no camera metadata")
+    @Test("a real RAW becomes a much smaller, upright JPEG with its colour profile and, with everything ticked, no metadata")
     func developsToJPEG() async throws {
         let src = try copyOfSample()
         let info = try ImageProbe.probe(url: src)
-        let plan = EncodePlanner().plan(info: info, inputURL: src, settings: Settings())
+        var everything = Settings(); everything.removeMetadata = Set(MetadataCategory.allCases)
+        let plan = EncodePlanner().plan(info: info, inputURL: src, settings: everything)
         #expect(plan.outcome == .planned)
         let out = dir.appendingPathComponent("out.jpg")
         _ = try await ImageEncoder().encode(plan: plan, info: info, to: out)
@@ -137,6 +138,24 @@ final class RawEndToEndTests {
         #expect(tiff?[kCGImagePropertyTIFFMake] == nil && tiff?[kCGImagePropertyTIFFModel] == nil)
         let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any]
         #expect(exif?[kCGImagePropertyExifDateTimeOriginal] == nil)
+    }
+
+    @Test("by default a RAW's JPEG keeps its camera details but never the location")
+    func defaultKeepsDetailsDropsLocation() async throws {
+        let src = try copyOfSample()
+        let info = try ImageProbe.probe(url: src)
+        let srcProps = Fixtures.properties(src)
+        let plan = EncodePlanner().plan(info: info, inputURL: src, settings: Settings())
+        let out = dir.appendingPathComponent("meta.jpg")
+        _ = try await ImageEncoder().encode(plan: plan, info: info, to: out)
+        let props = Fixtures.properties(out)
+        #expect(props[kCGImagePropertyGPSDictionary] == nil, "the location must not survive by default")
+        let before = (srcProps[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFModel]
+        let after = (props[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFModel]
+        #expect(before == nil || after != nil, "the camera model the RAW carries is kept")
+        // Upright exactly once, whatever was copied.
+        #expect((props[kCGImagePropertyOrientation] as? Int ?? 1) == 1)
+        #expect(props[kCGImagePropertyPixelWidth] as? Int == info.displayWidth)
     }
 
     @Test("the JPEG looks like the developed RAW (measured, not assumed)", .enabled(if: Requirements.oracle))

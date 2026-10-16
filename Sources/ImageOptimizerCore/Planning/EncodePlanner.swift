@@ -50,6 +50,8 @@ public struct ImagePlan: Sendable, Equatable {
     /// even a small saving.
     public var isLossless: Bool
     public var qualityNote: String
+    /// Metadata groups to leave out of the result; the rest of the source's metadata is carried across.
+    public var removeMetadata: Set<MetadataCategory> = MetadataCategory.defaultRemoved
 }
 
 public struct EncodePlanner: Sendable {
@@ -183,6 +185,6 @@ public struct EncodePlanner: Sendable {
             note = "HEIC quality \(quality)"
         }
         return ImagePlan(inputURL: inputURL, outputURL: outputURL, outcome: .planned, steps: steps,
-                         isLossless: lossless, qualityNote: note)
+                         isLossless: lossless, qualityNote: note, removeMetadata: settings.removeMetadata)
     }
 }

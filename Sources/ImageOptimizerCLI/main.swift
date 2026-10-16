@@ -5,6 +5,7 @@
 //     --lossless-png                     never use lossy palette reduction
 //     --force                            skip the size guards ("convert anyway")
 //     --out <folder>                     write results there instead of beside the source
+//     --remove-metadata all|none|LIST    groups to remove (default: location)
 //     --concurrency N                    (default: one per CPU core)
 //     --plan                             show what would happen, encode nothing
 
@@ -41,11 +42,27 @@ while let arg = args.popFirst() {
         try? FileManager.default.createDirectory(atPath: v, withIntermediateDirectories: true)
         settings.outputLocation = .chooseFolder
         settings.chosenFolderPath = v
+    case "--remove-metadata":
+        // all | none | a comma list of: location,date,camera,exposure,author,description,other
+        guard let v = args.popFirst() else { fail("--remove-metadata needs all, none, or a list") }
+        let names: [String: MetadataCategory] = ["location": .location, "date": .dateTime, "camera": .cameraAndLens,
+                                                 "exposure": .exposure, "author": .authorship, "description": .descriptions, "other": .other]
+        switch v {
+        case "all": settings.removeMetadata = Set(MetadataCategory.allCases)
+        case "none": settings.removeMetadata = []
+        default:
+            var chosen = Set<MetadataCategory>()
+            for part in v.split(separator: ",") {
+                guard let c = names[String(part)] else { fail("unknown metadata group '\(part)' (use \(names.keys.sorted().joined(separator: ", ")))") }
+                chosen.insert(c)
+            }
+            settings.removeMetadata = chosen
+        }
     case "--concurrency":
         guard let v = args.popFirst(), let n = Int(v), n > 0 else { fail("--concurrency needs a positive number") }
         settings.concurrency = n
     case "-h", "--help":
-        print("usage: ImageOptimizerCLI [--mode high|balanced|smallest] [--lossless-png] [--force] [--out DIR] [--concurrency N] [--plan] <files or folders>")
+        print("usage: ImageOptimizerCLI [--mode high|balanced|smallest] [--lossless-png] [--force] [--out DIR] [--concurrency N] [--remove-metadata all|none|location,date,camera,exposure,author,description,other] [--plan] <files or folders>")
         exit(0)
     default:
         inputs.append(arg)

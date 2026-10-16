@@ -244,3 +244,28 @@ Measured on the 446-frame, 88 MB recording: Smallest 44 s -> 16 s (29.2 MB again
 (48.1 MB against 46.9 MB), averaging about 5.6 cores busy (chunks are uneven, and the join and keyframes are
 serial). All frames compared pixel by pixel against the single-run output: mean difference 0.08/255, worst 0.8.
 Lossy modes only; the lossless result stays one exact run, because a keyframe is requantised to 256 colours.
+
+## Metadata you choose to keep (v1.3.0)
+
+Before, every result was a bare image: the encoders can't carry metadata across a re-encode, so GPS, capture time
+and camera model were all dropped. Now the user picks which groups to remove (location by default) and the rest of
+the source's metadata is put back.
+
+**How.** After the encoder finishes, `CGImageDestinationCopyImageSource` rewrites only the metadata of the finished
+file, from the source's `CGImageMetadata` minus the ticked groups. Measured on a real iPhone JPEG and HEIC: decoded
+pixels are identical (ffmpeg md5 match) and the Display P3 profile is kept. It works for JPEG, HEIC and PNG outputs,
+and for the JPEG a RAW is developed into (a Canon CR2 kept 46 tags).
+
+**Gotchas found by measuring.**
+- `kCGImageDestinationMergeMetadata: true` silently loses fields on HEIC (47 tags became 12); `false` keeps them.
+- The source's orientation, pixel dimensions and photometric tags are never copied: the JPEG's pixels are already
+  rotated, so a copied orientation would turn the picture sideways again.
+- GPS appears as `exif:GPSLatitude` etc. in the tag list but also as a `{GPS}` property block, so removal is verified
+  against both.
+- The tag list doesn't include everything (the Apple maker note is a property block, not a tag).
+
+**Fail-safe.** The copy is written to memory and verified (no tag in a removed group, no GPS block if location is
+removed) before the file is replaced. Any failure leaves the bare file. With the classifier deliberately broken so that
+GPS was not recognised as location, every file came out bare instead of leaking: nothing was kept and nothing leaked.
+
+**Cost.** About 7 KB on a 1.1 MB iPhone JPEG (0.7%).

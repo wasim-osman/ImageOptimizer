@@ -62,8 +62,13 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   re-encode turned 7 of 8 real iPhone photos sideways.)
 - **Colour stays correct.** Wide-gamut (Display P3) profiles are kept, and lossy PNG converts colours rather
   than dropping the profile, which would visibly shift every colour.
-- **Privacy by default.** Location (GPS), capture time and camera model are removed. Only what's needed to
-  display the image correctly (orientation and colour profile) is kept.
+- **Your location never leaves with the photo by default.** Metadata is yours to choose: Settings > Metadata
+  has a tick box for each group (location, date and time, camera and lens, exposure settings, author and
+  copyright, titles and keywords, everything else). Ticked groups are removed from the optimised copy and the
+  rest is kept. **Only the location is ticked out of the box, including for settings saved by an earlier
+  version.** "Remove all" gives a bare file. The picture is not touched by this (checked pixel for pixel), the
+  rotation and colour profile are always kept, and if a removed group can't be verified as gone, the file is
+  written with no metadata at all rather than risk leaking it. Keeping metadata makes a file a few KB larger.
 - **Never makes a file worse.** A source that's already efficient is refused, and a result that isn't
   meaningfully smaller is discarded and never written. Drop the same refused file again and it asks
   **"Optimise anyway?"**.
@@ -72,7 +77,7 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   HDR") rather than doing it silently.
 - **RAW is developed the way your Mac develops it.** It uses the same RAW engine as Preview and Photos, so the
   JPEG looks like what macOS shows for that file, with the camera's rotation applied once and wide-gamut
-  (Display P3) colour kept and labelled. Camera make, model, time and GPS are not carried over. The RAW is never
+  (Display P3) colour kept and labelled. Its camera details are kept and the location removed, per the Metadata settings. The RAW is never
   moved to the Trash, even with "Move the original to the Trash" on: it is the negative, and a JPEG can't
   be developed again.
 - **Refuses what it can't do safely**, and says why: animated images, CMYK, **portrait photos with depth
@@ -128,7 +133,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  148 tests, against real files and the real encoders
+Tests/                  160 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 
@@ -157,7 +162,7 @@ make test
 The suite uses real image files, written by ImageIO with the awkward properties that break naive optimisers
 (all 8 EXIF orientations, Display P3, 16-bit alpha, greyscale, CMYK, animated GIF, a truncated file), and the
 real encoders, with no stubs. It checks that an optimised photo displays upright, keeps its colours, loses its
-GPS, that lossless PNG is verified pixel-exact, that cancelling a running job really kills the encoder, and,
+location (and exactly the metadata groups you tick, no more), that lossless PNG is verified pixel-exact, that cancelling a running job really kills the encoder, and,
 using ssimulacra2, that outputs still look like their originals. The thresholds come from the real-photo
 validation, not from whatever the synthetic fixtures happen to score.
 

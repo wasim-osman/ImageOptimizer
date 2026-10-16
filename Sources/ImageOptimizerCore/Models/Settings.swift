@@ -44,7 +44,27 @@ public struct Settings: Sendable, Codable, Equatable {
     /// Images converted at once. 0 means automatic: one per CPU core. Every encoder here is single-threaded
     /// per file (gifsicle, cjpegli, pngquant), so parallel files are the only way to use more than one core.
     public var concurrency: Int = 0
+    /// Metadata groups to leave out of the result. Everything else in the source's metadata is kept. Only
+    /// the location by default, so a photo never leaves with where it was taken unless the user says so.
+    public var removeMetadata: Set<MetadataCategory> = MetadataCategory.defaultRemoved
     public var effectiveConcurrency: Int { concurrency > 0 ? concurrency : max(1, ProcessInfo.processInfo.activeProcessorCount) }
 
     public init() {}
+
+    // Written by hand so a settings file saved by an older version (missing newer keys) still loads, instead of
+    // being thrown away whole.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Settings()
+        encoderMode = try c.decodeIfPresent(EncoderMode.self, forKey: .encoderMode) ?? d.encoderMode
+        pngLossy = try c.decodeIfPresent(Bool.self, forKey: .pngLossy) ?? d.pngLossy
+        outputLocation = try c.decodeIfPresent(OutputLocation.self, forKey: .outputLocation) ?? d.outputLocation
+        chosenFolderPath = try c.decodeIfPresent(String.self, forKey: .chosenFolderPath) ?? d.chosenFolderPath
+        suffix = try c.decodeIfPresent(String.self, forKey: .suffix) ?? d.suffix
+        conflictPolicy = try c.decodeIfPresent(ResolveConflict.self, forKey: .conflictPolicy) ?? d.conflictPolicy
+        deleteSource = try c.decodeIfPresent(Bool.self, forKey: .deleteSource) ?? d.deleteSource
+        preserveDates = try c.decodeIfPresent(Bool.self, forKey: .preserveDates) ?? d.preserveDates
+        concurrency = try c.decodeIfPresent(Int.self, forKey: .concurrency) ?? d.concurrency
+        removeMetadata = try c.decodeIfPresent(Set<MetadataCategory>.self, forKey: .removeMetadata) ?? d.removeMetadata
+    }
 }

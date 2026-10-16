@@ -82,6 +82,12 @@ public struct ImageEncoder: Sendable {
         if current != partURL, !FileManager.default.fileExists(atPath: partURL.path) {
             try FileManager.default.copyItem(at: current, to: partURL)
         }
+        // Put back whatever metadata the user chose to keep. GIF has none of this kind.
+        if info.format != .gif {
+            let (source, removing) = (plan.inputURL, plan.removeMetadata)
+            let result = await Task.detached(priority: .utility) { MetadataFilter.apply(source: source, to: partURL, removing: removing) }.value
+            if let result, result.kept > 0 { report.notes.append("Kept \(result.kept) metadata fields; removed \(result.removed).") }
+        }
         return report
     }
 

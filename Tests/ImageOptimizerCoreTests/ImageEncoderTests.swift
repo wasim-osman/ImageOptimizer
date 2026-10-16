@@ -19,9 +19,10 @@ final class ImageEncoderTests {
 
     /// Plans with force so a small synthetic fixture isn't refused by the size guard; the
     /// encoder, not the guard, is what's under test here.
-    private func encode(_ url: URL, mode: EncoderMode = .balanced, pngLossy: Bool = true) async throws -> (out: URL, info: ImageInfo, report: EncodeReport) {
+    private func encode(_ url: URL, mode: EncoderMode = .balanced, pngLossy: Bool = true,
+                        remove: Set<MetadataCategory> = MetadataCategory.defaultRemoved) async throws -> (out: URL, info: ImageInfo, report: EncodeReport) {
         let info = try ImageProbe.probe(url: url)
-        var s = Settings(); s.encoderMode = mode; s.pngLossy = pngLossy
+        var s = Settings(); s.encoderMode = mode; s.pngLossy = pngLossy; s.removeMetadata = remove
         let plan = EncodePlanner().plan(info: info, inputURL: url, settings: s, forceEncode: true)
         guard case .planned = plan.outcome else { throw NSError(domain: "t", code: 1, userInfo: [NSLocalizedDescriptionKey: "not planned: \(plan.outcome)"]) }
         let out = dir.appendingPathComponent("out-\(UUID().uuidString.prefix(6)).\(url.pathExtension)")
@@ -83,17 +84,114 @@ final class ImageEncoderTests {
         #expect(try ImageProbe.probe(url: out).colorModel == .gray)
     }
 
-    @Test("camera metadata is stripped from a JPEG: no EXIF capture details, no GPS", .enabled(if: Requirements.jpegli))
-    func jpegMetadataStripped() async throws {
+    /// Which metadata fields a result carries, one flag per category, read from the file itself.
+    private struct Carried: Equatable {
+        var location, dateTime, camera, exposure, author, description: Bool
+        init(_ url: URL) {
+            let p = Fixtures.properties(url)
+            let exif = p[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+            let tiff = p[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+            location = p[kCGImagePropertyGPSDictionary] != nil
+            dateTime = exif[kCGImagePropertyExifDateTimeOriginal] != nil
+            camera = tiff[kCGImagePropertyTIFFModel] != nil || tiff[kCGImagePropertyTIFFMake] != nil || exif[kCGImagePropertyExifLensModel] != nil
+            exposure = exif[kCGImagePropertyExifFNumber] != nil || exif[kCGImagePropertyExifExposureTime] != nil
+            author = tiff[kCGImagePropertyTIFFArtist] != nil || tiff[kCGImagePropertyTIFFCopyright] != nil || tiff[kCGImagePropertyTIFFSoftware] != nil
+            description = tiff[kCGImagePropertyTIFFImageDescription] != nil || exif[kCGImagePropertyExifUserComment] != nil
+        }
+    }
+
+    @Test("by default only the location is removed: everything else the camera wrote is kept", .enabled(if: Requirements.jpegli))
+    func jpegDefaultRemovesOnlyLocation() async throws {
         let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(), to: dir.appendingPathComponent("m.jpg"), type: .jpeg)
-        let before = Fixtures.properties(src)
-        #expect(before[kCGImagePropertyGPSDictionary] != nil, "precondition: the fixture really carries GPS")
-        let (out, _, _) = try await encode(src)
-        let after = Fixtures.properties(out)
-        #expect(after[kCGImagePropertyGPSDictionary] == nil, "the location must not survive")
-        let exif = after[kCGImagePropertyExifDictionary] as? [CFString: Any]
-        #expect(exif?[kCGImagePropertyExifDateTimeOriginal] == nil, "capture time must not survive")
-        #expect((after[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFModel] == nil, "camera model must not survive")
+        let before = Carried(src)
+        #expect(before.location && before.dateTime && before.camera && before.exposure && before.author && before.description, "precondition: the fixture carries all six")
+        let (out, _, report) = try await encode(src)
+        let after = Carried(out)
+        #expect(!after.location, "the location must not survive by default")
+        #expect(after.dateTime && after.camera && after.exposure && after.author && after.description, "everything else is kept: \(after)")
+        #expect(report.notes.contains { $0.contains("Kept") }, "the result says what it kept")
+    }
+
+    @Test("each category, ticked alone, removes exactly its own fields", .enabled(if: Requirements.jpegli),
+          arguments: [MetadataCategory.location, .dateTime, .cameraAndLens, .exposure, .authorship, .descriptions])
+    func eachCategoryAlone(_ category: MetadataCategory) async throws {
+        let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(), to: dir.appendingPathComponent("c-\(category.rawValue).jpg"), type: .jpeg)
+        let (out, _, _) = try await encode(src, remove: [category])
+        let a = Carried(out)
+        // Location is always checked too: the field set is what is left after the one removal.
+        let expected = [
+            MetadataCategory.location: !a.location, .dateTime: !a.dateTime, .cameraAndLens: !a.camera,
+            .exposure: !a.exposure, .authorship: !a.author, .descriptions: !a.description,
+        ]
+        for (c, gone) in expected { #expect(gone == (c == category), "\(c): removed=\(gone) when only \(category) was ticked") }
+    }
+
+    @Test("ticking everything leaves a bare file, as before", .enabled(if: Requirements.jpegli))
+    func jpegRemoveEverything() async throws {
+        let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(), to: dir.appendingPathComponent("all.jpg"), type: .jpeg)
+        let (out, _, _) = try await encode(src, remove: Set(MetadataCategory.allCases))
+        let a = Carried(out)
+        #expect(!a.location && !a.dateTime && !a.camera && !a.exposure && !a.author && !a.description, "\(a)")
+    }
+
+    @Test("keeping metadata never changes a pixel, the orientation, or the colour profile", .enabled(if: Requirements.jpegli))
+    func metadataDoesNotTouchThePicture() async throws {
+        let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(width: 640, height: 480), to: dir.appendingPathComponent("o.jpg"), type: .jpeg, orientation: 6)
+        let (kept, _, _) = try await encode(src)
+        let (bare, _, _) = try await encode(src, remove: Set(MetadataCategory.allCases))
+        let a = try #require(Fixtures.viewerPixels(kept)), b = try #require(Fixtures.viewerPixels(bare))
+        #expect(a.width == b.width && a.height == b.height && a.rgba == b.rgba, "metadata must not alter the image")
+        let p = Fixtures.properties(kept)
+        #expect((p[kCGImagePropertyOrientation] as? Int ?? 1) == 1, "pixels are already upright, so a copied tag would turn it sideways again")
+        #expect(p[kCGImagePropertyPixelWidth] as? Int == 480 && p[kCGImagePropertyPixelHeight] as? Int == 640)
+        let v = try #require(Fixtures.viewerPixels(src))
+        #expect(v.width == a.width && v.height == a.height, "still displays upright exactly once")
+    }
+
+    @Test("PNG: the location is removed by default and the rest kept, through the lossy and lossless paths", .enabled(if: Requirements.png))
+    func pngMetadata() async throws {
+        let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(width: 320, height: 240), to: dir.appendingPathComponent("m.png"), type: .png)
+        try #require(Carried(src).location, "precondition: the PNG carries GPS (as an eXIf chunk)")
+        for lossy in [true, false] {
+            let (out, _, _) = try await encode(src, pngLossy: lossy)
+            let a = Carried(out)
+            #expect(!a.location, "lossy=\(lossy): the location must not survive")
+            #expect(a.dateTime && a.camera, "lossy=\(lossy): the rest is kept: \(a)")
+            let (bare, _, _) = try await encode(src, pngLossy: lossy, remove: Set(MetadataCategory.allCases))
+            let b = Carried(bare)
+            #expect(!b.location && !b.dateTime && !b.camera && !b.exposure && !b.author && !b.description, "lossy=\(lossy): \(b)")
+        }
+    }
+
+    @Test("a missing or unreadable source leaves the file exactly as it was")
+    func failSafe() throws {
+        let f = dir.appendingPathComponent("keep.jpg")
+        try Data("not an image".utf8).write(to: f)
+        #expect(MetadataFilter.apply(source: dir.appendingPathComponent("nope.jpg"), to: f, removing: [.location]) == nil)
+        #expect(try Data(contentsOf: f) == Data("not an image".utf8))
+        let img = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(width: 64, height: 64), to: dir.appendingPathComponent("s.jpg"), type: .jpeg)
+        #expect(MetadataFilter.apply(source: img, to: f, removing: [.location]) == nil, "an output that isn't an image is left alone")
+        #expect(try Data(contentsOf: f) == Data("not an image".utf8))
+    }
+
+    @Test("the classifier: GPS is location wherever it is stored, orientation and sizes are never copied")
+    func classifier() {
+        #expect(MetadataFilter.category(prefix: "exif", name: "GPSLatitude") == .location)
+        #expect(MetadataFilter.category(prefix: "GPS", name: "Latitude") == .location)
+        #expect(MetadataFilter.category(prefix: "photoshop", name: "City") == .location)
+        #expect(MetadataFilter.category(prefix: "exif", name: "DateTimeOriginal") == .dateTime)
+        #expect(MetadataFilter.category(prefix: "exif", name: "SubsecTimeOriginal") == .dateTime)
+        #expect(MetadataFilter.category(prefix: "tiff", name: "Model") == .cameraAndLens)
+        #expect(MetadataFilter.category(prefix: "exifEX", name: "LensModel") == .cameraAndLens)
+        #expect(MetadataFilter.category(prefix: "aux", name: "SerialNumber") == .cameraAndLens)
+        #expect(MetadataFilter.category(prefix: "exif", name: "FNumber") == .exposure)
+        #expect(MetadataFilter.category(prefix: "tiff", name: "Artist") == .authorship)
+        #expect(MetadataFilter.category(prefix: "dc", name: "creator[1]") == .authorship)
+        #expect(MetadataFilter.category(prefix: "dc", name: "subject[2]") == .descriptions)
+        #expect(MetadataFilter.category(prefix: "exif", name: "UserComment") == .descriptions)
+        #expect(MetadataFilter.category(prefix: "exif", name: "ExifVersion") == .other)
+        #expect(MetadataFilter.category(prefix: "tiff", name: "Orientation") == nil)
+        #expect(MetadataFilter.category(prefix: "exif", name: "PixelXDimension") == nil)
     }
 
     // MARK: - PNG
@@ -183,17 +281,21 @@ final class ImageEncoderTests {
         #expect(try ImageProbe.probe(url: out).iccProfileName == "Display P3")
     }
 
-    @Test("HEIC metadata policy: GPS and capture details are stripped, orientation kept")
-    func heicMetadataStripped() async throws {
+    @Test("HEIC: location removed by default, the rest kept, orientation kept; ticking everything leaves it bare")
+    func heicMetadataPolicy() async throws {
         let src = try Fixtures.writeWithCameraMetadata(Fixtures.photoLike(width: 800, height: 600), to: dir.appendingPathComponent("hm.heic"),
                                                        type: .heic, quality: 0.95, orientation: 6)
-        #expect(Fixtures.properties(src)[kCGImagePropertyGPSDictionary] != nil, "precondition: fixture carries GPS")
+        #expect(Carried(src).location, "precondition: fixture carries GPS")
         let (out, _, _) = try await encode(src)
-        let after = Fixtures.properties(out)
-        #expect(after[kCGImagePropertyGPSDictionary] == nil, "the location must not survive")
-        #expect((after[kCGImagePropertyExifDictionary] as? [CFString: Any])?[kCGImagePropertyExifDateTimeOriginal] == nil, "capture time must not survive")
-        #expect((after[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFModel] == nil, "camera model must not survive")
-        #expect(after[kCGImagePropertyOrientation] as? Int == 6, "orientation is essential and must survive")
+        let a = Carried(out)
+        #expect(!a.location && a.dateTime && a.camera && a.exposure && a.author && a.description, "\(a)")
+        #expect(Fixtures.properties(out)[kCGImagePropertyOrientation] as? Int == 6, "orientation is essential and must survive")
+        let (bare, _, _) = try await encode(src, remove: Set(MetadataCategory.allCases))
+        let b = Carried(bare)
+        #expect(!b.location && !b.dateTime && !b.camera && !b.exposure && !b.author && !b.description, "\(b)")
+        #expect(Fixtures.properties(bare)[kCGImagePropertyOrientation] as? Int == 6)
+        let p = try #require(Fixtures.viewerPixels(out)), q = try #require(Fixtures.viewerPixels(bare))
+        #expect(p.rgba == q.rgba, "metadata must not alter the image")
     }
 
     // MARK: - Cancellation
