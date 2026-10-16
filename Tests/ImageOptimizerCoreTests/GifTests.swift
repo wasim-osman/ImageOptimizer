@@ -42,6 +42,48 @@ struct GifPlanningTests {
         #expect(plan(gif({ $0.width = 700; $0.height = 1500 })) { $0.encoderMode = .balanced }.steps == [.gifsicle(lossy: 10, maxSide: 1280)])
     }
 
+    @Test("chunking: only big, long GIFs, never more chunks than cores, memory allows, or 16-frame slices; ranges tile every frame once")
+    func chunkPlanning() throws {
+        #expect(ImageEncoder.chunkRanges(frames: 446, bytes: 1_000_000, cores: 12) == nil, "a small file is run whole")
+        #expect(ImageEncoder.chunkRanges(frames: 20, bytes: 90_000_000, cores: 12) == nil, "too few frames to split")
+        #expect(ImageEncoder.chunkRanges(frames: 446, bytes: 90_000_000, cores: 1) == nil, "one core gains nothing")
+        let r = try #require(ImageEncoder.chunkRanges(frames: 446, bytes: 90_000_000, cores: 12))
+        #expect(r.count == 12)
+        #expect(r.first?.lowerBound == 0 && r.last?.upperBound == 445)
+        #expect(zip(r, r.dropFirst()).allSatisfy { $0.upperBound + 1 == $1.lowerBound }, "ranges must tile with no gap or overlap")
+        #expect(r.allSatisfy { $0.count >= 16 })
+        // 40 frames can only make two 20-frame chunks even with 12 cores, and a 1 GB source is limited by memory.
+        #expect(ImageEncoder.chunkRanges(frames: 40, bytes: 90_000_000, cores: 12)?.count == 2)
+        #expect(ImageEncoder.chunkRanges(frames: 446, bytes: 1_000_000_000, cores: 12)?.count == 3)
+    }
+
+    @Test("a chunk only starts on a frame whose disposal leaves the picture alone; boundaries slide forward or are dropped")
+    func safeBoundaries() throws {
+        let info = """
+        * x.gif 6 images
+          + image #0 10x10
+            disposal asis delay 0.1s
+          + image #1 10x10
+            disposal background delay 0.1s
+          + image #2 10x10
+            delay 0.1s
+          + image #3 10x10
+            disposal previous delay 0.1s
+          + image #4 10x10
+            disposal background delay 0.1s
+          + image #5 10x10
+            disposal asis delay 0.1s
+        """
+        let safe = ImageEncoder.keyframeSafe(info: info)
+        #expect(safe == [true, false, true, false, false, true])
+        // 3 chunks 0-1, 2-3, 4-5: the second starts at 2 (safe); the third's 4 is unsafe so slides to 5.
+        #expect(ImageEncoder.alignedRanges([0...1, 2...3, 4...5], safe: safe) == [0...1, 2...4, 5...5])
+        // Nothing safe in the second chunk: it is joined to the first.
+        #expect(ImageEncoder.alignedRanges([0...2, 3...4], safe: safe) == nil)
+        #expect(ImageEncoder.alignedRanges([0...2, 3...5], safe: safe) == [0...4, 5...5])
+        #expect(ImageEncoder.alignedRanges([0...2, 3...5], safe: [true]) == nil, "an unparseable listing means a serial run")
+    }
+
     @Test("only high quality is lossless, which lets the post-flight guard keep a small saving")
     func losslessFlag() {
         #expect(plan(gif()) { $0.encoderMode = .highQuality }.isLossless)
@@ -171,6 +213,40 @@ final class GifEndToEndTests {
         let (kept, _) = try await optimise(src, .highQuality)
         let k = try #require(shape(kept))
         #expect(k.width == 1500 && k.height == 1500)
+    }
+
+    @Test("chunked across cores: same frames, delays, loop count and picture as one run, including at every chunk boundary")
+    func chunked() async throws {
+        let tool = try #require(ToolLocator.url(for: .gifsicle))
+        // ImageIO stores only what changed between frames and leaves them "asis", as a screen recording does.
+        let src = try Fixtures.movingSquareGIF(to: dir.appendingPathComponent("delta.gif"), frames: 40, size: 200, loopCount: 5)
+        let before = try #require(shape(src))
+        #expect(before.frames == 40)
+        let base = ["-O3", "--no-comments", "--no-names", "--no-extensions", "--no-warnings", "--lossy=10"]
+        let serial = dir.appendingPathComponent("serial.gif"), chunkedOut = dir.appendingPathComponent("chunked.gif")
+        let q = Process(); q.executableURL = tool; q.arguments = base + [src.path, "-o", serial.path]
+        try q.run(); q.waitUntilExit()
+        let work = try Fixtures.makeDirectory(); defer { try? FileManager.default.removeItem(at: work) }
+        let infoFile = work.appendingPathComponent("info.txt")
+        let r = Process(); r.executableURL = tool; r.arguments = ["--info", src.path, "-o", infoFile.path]
+        try r.run(); r.waitUntilExit()
+        let safe = ImageEncoder.keyframeSafe(info: try String(contentsOf: infoFile, encoding: .utf8))
+        #expect(safe.count == 40 && !safe.contains(false))
+        let ranges = try #require(ImageEncoder.alignedRanges([0...9, 10...19, 20...29, 30...39], safe: safe))
+        #expect(ranges.count == 4)
+        try await ImageEncoder().runGifsicleChunked(tool: tool, input: src, output: chunkedOut, baseArgs: base, ranges: ranges, work: work)
+        let a = try #require(shape(serial)), b = try #require(shape(chunkedOut))
+        #expect(b.frames == before.frames && b.width == before.width && b.height == before.height)
+        #expect(b.totalDelay == before.totalDelay, "playback length changed: \(before.totalDelay) -> \(b.totalDelay)")
+        #expect(b.loop == a.loop && b.loop == 5, "loop count: \(String(describing: b.loop))")
+        // Every frame, and so every chunk boundary (9|10, 19|20, 29|30), must look like the one-run result.
+        var worst = 0.0
+        for i in 0..<before.frames {
+            let x = try #require(frame(serial, i)), y = try #require(frame(chunkedOut, i))
+            var d = 0; for k in 0..<x.count { d += abs(Int(x[k]) - Int(y[k])) }
+            worst = max(worst, Double(d) / Double(x.count))
+        }
+        #expect(worst < 3, "a frame differs from the single-run result by \(worst) on average")
     }
 
     @Test("a loop count of 'forever' and of 'once' both survive")

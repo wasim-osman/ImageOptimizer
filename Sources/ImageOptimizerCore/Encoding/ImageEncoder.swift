@@ -65,7 +65,7 @@ public struct ImageEncoder: Sendable {
                 try await runOxipng(input: current, output: destination, level: level)
                 current = destination
             case .gifsicle(let lossy, let maxSide):
-                let fellBack = try await runGifsicle(input: plan.inputURL, output: destination, lossy: lossy, maxSide: maxSide)
+                let fellBack = try await runGifsicle(input: plan.inputURL, output: destination, lossy: lossy, maxSide: maxSide, frames: info.frameCount, work: work)
                 if fellBack {
                     report.producedLossless = true
                     report.notes.append("Lossy compression wouldn't have saved enough, so this GIF was repacked losslessly instead.")
@@ -145,7 +145,7 @@ public struct ImageEncoder: Sendable {
     // MARK: - GIF (gifsicle)
 
     /// Returns true when a lossy request fell back to a lossless result.
-    private func runGifsicle(input: URL, output: URL, lossy: Int?, maxSide: Int?) async throws -> Bool {
+    private func runGifsicle(input: URL, output: URL, lossy: Int?, maxSide: Int?, frames: Int, work: URL) async throws -> Bool {
         guard let tool = ToolLocator.url(for: .gifsicle) else { throw EncodeError.toolMissing("gifsicle") }
         // -O3 is the strongest frame-diffing and palette search. Comments and unknown extensions are
         // dropped (the "essentials only" metadata rule); frames, delays and the loop count are kept.
@@ -153,6 +153,11 @@ public struct ImageEncoder: Sendable {
             var args = ["-O3", "--no-comments", "--no-names", "--no-extensions", "--no-warnings"]
             if let lossy { args.append("--lossy=\(lossy)") }
             if let maxSide { args += ["--resize-fit", "\(maxSide)x\(maxSide)"] }
+            // A big lossy GIF is spread across the cores; lossless stays one exact run (see GifChunks.swift).
+            if lossy != nil, let ranges = try await chunkPlan(tool: tool, input: input, frames: frames, work: work) {
+                try await runGifsicleChunked(tool: tool, input: input, output: output, baseArgs: args, ranges: ranges, work: work)
+                return
+            }
             args += [input.path, "-o", output.path]
             try throwIfFailed(await ProcessRunner.run(tool, arguments: args), tool: "gifsicle")
         }
@@ -162,7 +167,7 @@ public struct ImageEncoder: Sendable {
         // Lossy costs quality, so it must earn it. Measured on real GIFs, lossy often saved nothing
         // beyond what a lossless repack already does (and sometimes grew the file); when it falls short
         // of the guard's bar, keep the lossless result instead of throwing the saving away.
-        func bytes(_ u: URL) -> Int64 { ((try? FileManager.default.attributesOfItem(atPath: u.path)[.size]) as? Int64) ?? .max }
+        let bytes = Self.fileBytes
         let original = bytes(input)
         if Double(bytes(output)) >= Double(original) * 0.92 {
             try Task.checkCancellation(or: EncodeError.cancelled)
@@ -204,7 +209,9 @@ public struct ImageEncoder: Sendable {
 
     // MARK: - Helpers
 
-    private func throwIfFailed(_ result: ProcessResult, tool: String) throws {
+    static func fileBytes(_ u: URL) -> Int64 { ((try? FileManager.default.attributesOfItem(atPath: u.path)[.size]) as? Int64) ?? .max }
+
+    func throwIfFailed(_ result: ProcessResult, tool: String) throws {
         if result.wasCancelled { throw EncodeError.cancelled }
         guard result.exitCode == 0 else { throw EncodeError.toolFailed(tool: tool, message: clean(result.stderr)) }
     }

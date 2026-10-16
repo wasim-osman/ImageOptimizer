@@ -128,7 +128,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  145 tests, against real files and the real encoders
+Tests/                  148 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 
@@ -170,8 +170,8 @@ passes an explicit `-plugin-path` so its macros resolve; that flag is harmless w
 
 - **Not signed or notarised.** Gatekeeper warns on first launch.
 - **HEIC savings are small** (see above), and HDR photos need your confirmation and portrait photos are refused.
-- **GIF is slow on big files**: an 88 MB screen recording took 44 to 68 seconds (Smallest and Balanced, which
-  resize it). Lossy GIF compression adds visible dithering noise; High quality stays exact.
+- **GIF is slow on big files**: an 88 MB screen recording took 16 to 22 seconds (Smallest and Balanced, spread over every core and
+  resized). High quality stays on one core and takes longer. Lossy GIF compression adds visible dithering noise; High quality stays exact.
 - **JPEG, PNG, GIF, HEIC and camera RAW only.** Everything else is refused with a message.
 - **RAW depends on your macOS.** Apple's decoder adds cameras with each release; a newer camera may say it
   can't be developed until you update macOS. Only iPhone ProRAW (DNG) and Canon (CR2) files were tested;

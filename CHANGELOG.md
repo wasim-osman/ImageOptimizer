@@ -2,6 +2,18 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.3] — 2026-10-16
+
+### Changed
+- **A big GIF now uses every core.** gifsicle is single-threaded, so one large GIF ran on one core. In Balanced
+  and Smallest, a GIF of 8 MB or more with enough frames is split into chunks (up to one per core), each
+  optimised by its own gifsicle, then joined. Each chunk after the first starts from a keyframe (the fully
+  composited frame, rendered by ImageIO) because a GIF can't be cut at an ordinary frame. Your 88 MB, 446-frame
+  recording: Smallest 44 s -> 16 s, Balanced 68 s -> 22 s, about 2.6% larger (the keyframes). All 446 frames,
+  every delay and the loop count are unchanged, and every frame matches the single-run result to within 0.8/255.
+- A chunk only starts on a frame that doesn't clear the picture behind it (a GIF "disposal" setting); if no
+  such frame exists the GIF is run whole. High quality is lossless and is never chunked.
+
 ## [1.2.2] — 2026-10-16
 
 ### Changed

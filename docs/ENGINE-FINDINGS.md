@@ -225,3 +225,22 @@ A 1912x1197, 446-frame, 88 MB map recording (every frame a pan or zoom, so nearl
 Lossy GIF compression saves nothing when frames have no repeated pixels, and fewer colours wreck a photographic
 map. So Balanced caps the longer side at 1280 and Smallest at 960; a GIF within the cap is untouched. The full
 file: Balanced 47 MB in 68 s, Smallest 28.5 MB in 44 s.
+
+### Spreading one GIF across the cores (v1.2.3)
+
+gifsicle is single-threaded. To use every core on one large lossy GIF the frames are split into chunks, each
+optimised by its own gifsicle, then concatenated (`gifsicle a.gif b.gif ...`, which keeps each frame, its delay
+and its palette, and takes the loop count from the first file).
+
+The hard part is the cut. A slice of an optimised GIF starts with a partial frame, and `gifsicle --unoptimize`
+refuses ("too complex") when full frames would need more than 256 colours, as the map recording's do. So every
+chunk after the first begins with a **keyframe**: the composited frame as ImageIO renders it, written as a
+one-frame GIF with the source frame's delay. Two things broke before it was right: ImageIO writes the keyframe with
+"disposal background", which wipes the picture the next partial frame is drawn over (fixed by rewriting it
+`--disposal=asis`), and a source frame with its own background/previous disposal can't be replaced by a full
+keyframe at all, so a chunk only starts on a frame whose `--info` shows no such disposal.
+
+Measured on the 446-frame, 88 MB recording: Smallest 44 s -> 16 s (29.2 MB against 28.5 MB), Balanced 68 s -> 22 s
+(48.1 MB against 46.9 MB), averaging about 5.6 cores busy (chunks are uneven, and the join and keyframes are
+serial). All frames compared pixel by pixel against the single-run output: mean difference 0.08/255, worst 0.8.
+Lossy modes only; the lossless result stays one exact run, because a keyframe is requantised to 256 colours.
