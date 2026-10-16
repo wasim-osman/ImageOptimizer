@@ -32,8 +32,12 @@ while let arg = args.popFirst() {
         case "high": settings.encoderMode = .highQuality
         case "balanced": settings.encoderMode = .balanced
         case "smallest": settings.encoderMode = .smallest
-        default: fail("unknown mode '\(v)' (high, balanced, smallest)")
+        case "fit": settings.encoderMode = .fitToSize
+        default: fail("unknown mode '\(v)' (high, balanced, smallest, fit)")
         }
+    case "--target-mb":
+        guard let v = args.popFirst(), let n = Double(v), n > 0 else { fail("--target-mb needs a positive number") }
+        settings.targetSizeMB = n
     case "--lossless-png": settings.pngLossy = false
     case "--force": force = true
     case "--plan": planOnly = true
@@ -62,7 +66,7 @@ while let arg = args.popFirst() {
         guard let v = args.popFirst(), let n = Int(v), n > 0 else { fail("--concurrency needs a positive number") }
         settings.concurrency = n
     case "-h", "--help":
-        print("usage: ImageOptimizerCLI [--mode high|balanced|smallest] [--lossless-png] [--force] [--out DIR] [--concurrency N] [--remove-metadata all|none|location,date,camera,exposure,author,description,other] [--plan] <files or folders>")
+        print("usage: ImageOptimizerCLI [--mode high|balanced|smallest|fit] [--target-mb N] [--lossless-png] [--force] [--out DIR] [--concurrency N] [--remove-metadata all|none|location,date,camera,exposure,author,description,other] [--plan] <files or folders>")
         exit(0)
     default:
         inputs.append(arg)

@@ -32,8 +32,16 @@ enum PixelExtractor {
     /// JPEG looks like what the Mac shows for that file. The engine applies the camera's rotation
     /// itself, so the pixels come out upright and must not be rotated again. They are rendered in
     /// Display P3, which keeps wide-gamut colour, and that profile is embedded in the JPEG.
-    static func extractRAW(url: URL) throws -> DecodedPixels {
-        guard let filter = CIRAWFilter(imageURL: url), let developed = filter.outputImage else {
+    static func extractRAW(url: URL, maxSide: Int? = nil) throws -> DecodedPixels {
+        guard let filter = CIRAWFilter(imageURL: url) else {
+            throw EncodeError.decodeFailed("this macOS version can't develop RAW files from this camera. Updating macOS adds newer cameras")
+        }
+        // Develop at the smaller size directly (cheaper and sharper than shrinking afterwards).
+        if let maxSide, maxSide > 0 {
+            let native = max(filter.nativeSize.width, filter.nativeSize.height)
+            if native > CGFloat(maxSide) { filter.scaleFactor = Float(CGFloat(maxSide) / native) }
+        }
+        guard let developed = filter.outputImage else {
             throw EncodeError.decodeFailed("this macOS version can't develop RAW files from this camera. Updating macOS adds newer cameras")
         }
         let extent = developed.extent.integral
@@ -59,8 +67,9 @@ enum PixelExtractor {
         return DecodedPixels(width: width, height: height, isGray: false, bytes: rgb, iccProfile: space.copyICCData() as Data?)
     }
 
-    static func extract(url: URL, info: ImageInfo) throws -> DecodedPixels {
-        if info.format == .raw { return try extractRAW(url: url) }
+    /// `maxSide` shrinks the picture so its longer side fits (never enlarges).
+    static func extract(url: URL, info: ImageInfo, maxSide: Int? = nil) throws -> DecodedPixels {
+        if info.format == .raw { return try extractRAW(url: url, maxSide: maxSide) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw EncodeError.decodeFailed("couldn't open \(url.lastPathComponent)")
         }
@@ -69,7 +78,7 @@ enum PixelExtractor {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(info.width, info.height),
+            kCGImageSourceThumbnailMaxPixelSize: min(max(info.width, info.height), maxSide ?? .max),
             kCGImageSourceShouldCacheImmediately: true,
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {

@@ -148,7 +148,7 @@ public actor JobQueue {
             try Task.checkCancellation(or: EncodeError.cancelled)
             let outcome = try OutputFinalizer.finalize(
                 partURL: partURL, outputURL: plan.outputURL, inputURL: job.inputURL, inputSize: job.inputSize,
-                lossless: plan.isLossless || report.producedLossless, bypassGuard: job.forceEncode, preserveDates: settings.preserveDates
+                lossless: plan.isLossless || report.producedLossless, bypassGuard: job.forceEncode || plan.fitTargetBytes != nil, preserveDates: settings.preserveDates
             )
             switch outcome {
             case .discarded(let message):

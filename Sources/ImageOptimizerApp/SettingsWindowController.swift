@@ -12,9 +12,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let suffixField = NSTextField(string: "")
     private let conflictPolicy = NSPopUpButton()
 
-    private let encoderMode = NSSegmentedControl(labels: ["High quality", "Balanced", "Smallest"],
+    private let encoderMode = NSSegmentedControl(labels: ["High quality", "Balanced", "Smallest", "Fit to size"],
                                                  trackingMode: .selectOne, target: nil, action: nil)
     private let modeCaption = NSTextField(wrappingLabelWithString: "")
+    private let targetField = NSTextField(string: "")
+    private let targetUnit = NSTextField(labelWithString: "MB")
     private let pngLossy = NSButton(checkboxWithTitle: "Reduce PNG colours (much smaller, near-identical)", target: nil, action: nil)
 
     private var metadataBoxes: [MetadataCategory: NSButton] = [:]
@@ -105,7 +107,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         pngLossy.target = self
         pngLossy.action = #selector(commitFields)
         pngLossy.toolTip = "Lossy PNG uses palette reduction. High quality mode never uses it: PNGs are recompressed pixel-for-pixel."
-        return grid([("Optimise for:", encoderMode), ("", modeCaption), ("PNG:", pngLossy)])
+        targetField.target = self
+        targetField.action = #selector(commitFields)
+        targetField.alignment = .right
+        targetField.placeholderString = "10"
+        targetField.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        targetField.toolTip = "Discord's limit is 10 MB. Decimal megabytes, so a result under it is also under 10 MiB."
+        let targetRow = NSStackView(views: [targetField, targetUnit])
+        targetRow.orientation = .horizontal
+        targetRow.spacing = 6
+        return grid([("Optimise for:", encoderMode), ("", modeCaption), ("Target size:", targetRow), ("PNG:", pngLossy)])
     }
 
     /// One checkbox per group of embedded metadata. Ticked means removed from the optimised copy.
@@ -217,11 +228,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Store ⇄ controls
 
-    private static let modes: [EncoderMode] = [.highQuality, .balanced, .smallest]
+    private static let modes: [EncoderMode] = [.highQuality, .balanced, .smallest, .fitToSize]
     private static let captions: [EncoderMode: String] = [
         .highQuality: "Visually lossless. Smaller files, with no visible change. PNGs are recompressed exactly.",
         .balanced: "Looks the same as the original at normal viewing. The best trade for most photos.",
         .smallest: "Squeezes hardest. Fine detail may soften slightly when you zoom in.",
+        .fitToSize: "Keeps the best quality that fits under the target size (e.g. 10 MB for Discord), shrinking the picture only when quality alone can't. Images already under it are left alone.",
     ]
 
     private func loadFromStore() {
@@ -233,6 +245,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         encoderMode.selectedSegment = Self.modes.firstIndex(of: s.encoderMode) ?? 1
         modeCaption.stringValue = Self.captions[s.encoderMode] ?? ""
         pngLossy.state = s.pngLossy ? .on : .off
+        targetField.stringValue = Self.formatMB(s.targetSizeMB)
         concurrency.integerValue = s.concurrency
         concurrencyLabel.stringValue = Self.concurrencyText(s.concurrency)
         for (category, box) in metadataBoxes { box.state = s.removeMetadata.contains(category) ? .on : .off }
@@ -248,6 +261,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             s.conflictPolicy = [.overwrite, .numberIt, .skip][conflictPolicy.indexOfSelectedItem]
             s.encoderMode = Self.modes[max(0, encoderMode.selectedSegment)]
             s.pngLossy = pngLossy.state == .on
+            if let mb = Double(targetField.stringValue.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")), mb > 0 {
+                s.targetSizeMB = min(max(mb, 0.1), 1000)
+            }
             s.concurrency = concurrency.integerValue
             s.removeMetadata = Set(metadataBoxes.filter { $0.value.state == .on }.map(\.key))
             s.preserveDates = preserveDates.state == .on
@@ -263,7 +279,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// High quality never uses lossy PNG, so the checkbox would do nothing — grey it out and say
     /// why, rather than leave a control that silently has no effect.
+    private static func formatMB(_ mb: Double) -> String {
+        mb == mb.rounded() ? String(Int(mb)) : String(format: "%g", mb)
+    }
+
     private func updateEnabledStates() {
+        let fit = store.settings.encoderMode == .fitToSize
+        targetField.isEnabled = fit
+        targetUnit.textColor = fit ? .labelColor : .tertiaryLabelColor
+        targetField.stringValue = Self.formatMB(store.settings.targetSizeMB)
         let high = store.settings.encoderMode == .highQuality
         pngLossy.isEnabled = !high
         pngLossy.toolTip = high ? "Not used in High quality mode: PNGs are always recompressed pixel-for-pixel."

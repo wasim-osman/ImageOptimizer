@@ -8,12 +8,15 @@ public enum EncoderMode: String, Sendable, CaseIterable, Codable {
     case highQuality
     case balanced
     case smallest
+    /// Keep shrinking until the file is no bigger than `Settings.targetSizeMB`.
+    case fitToSize
 
     public var displayName: String {
         switch self {
         case .highQuality: return "High quality"
         case .balanced: return "Balanced"
         case .smallest: return "Smallest"
+        case .fitToSize: return "Fit to size"
         }
     }
 }
@@ -47,6 +50,11 @@ public struct Settings: Sendable, Codable, Equatable {
     /// Metadata groups to leave out of the result. Everything else in the source's metadata is kept. Only
     /// the location by default, so a photo never leaves with where it was taken unless the user says so.
     public var removeMetadata: Set<MetadataCategory> = MetadataCategory.defaultRemoved
+    /// The size "Fit to size" aims under, in megabytes (1 MB = 1,000,000 bytes, so a result under it is also under
+    /// the same number of MiB: Discord's 10 MB limit is met either way).
+    public var targetSizeMB: Double = 10
+    public var targetBytes: Int64 { Int64((max(0.1, targetSizeMB) * 1_000_000).rounded()) }
+
     public var effectiveConcurrency: Int { concurrency > 0 ? concurrency : max(1, ProcessInfo.processInfo.activeProcessorCount) }
 
     public init() {}
@@ -66,5 +74,6 @@ public struct Settings: Sendable, Codable, Equatable {
         preserveDates = try c.decodeIfPresent(Bool.self, forKey: .preserveDates) ?? d.preserveDates
         concurrency = try c.decodeIfPresent(Int.self, forKey: .concurrency) ?? d.concurrency
         removeMetadata = try c.decodeIfPresent(Set<MetadataCategory>.self, forKey: .removeMetadata) ?? d.removeMetadata
+        targetSizeMB = try c.decodeIfPresent(Double.self, forKey: .targetSizeMB) ?? d.targetSizeMB
     }
 }

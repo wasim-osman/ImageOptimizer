@@ -16,6 +16,7 @@ public struct BloatGuard: Sendable {
     /// content, not quality, and the post-flight check judges the real result.
     public static func bppFloor(format: ImageFormat, mode: EncoderMode) -> Double? {
         switch (format, mode) {
+        case (_, .fitToSize): return nil
         case (.jpeg, .highQuality): return 1.6
         case (.jpeg, .balanced): return 1.0
         case (.jpeg, .smallest): return 0.7

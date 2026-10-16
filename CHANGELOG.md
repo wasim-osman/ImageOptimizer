@@ -2,6 +2,13 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.0] — 2026-10-16
+
+### Added
+- **Fit to size.** A fourth quality option, beside High quality, Balanced and Smallest, that keeps shrinking an image until it is no bigger than a target (10 MB by default, the Discord limit; change it in Settings > Quality, or `--mode fit --target-mb N` on the command line). It keeps the best quality that fits and only shrinks the picture when quality alone can't: JPEG and RAW by searching the jpegli quality, HEIC the encoder quality, PNG lossless, then palette reduction, then smaller. A GIF goes straight to resolution (lossy compression saves almost nothing on a screen recording), homing in on the largest size that fits, spread over every core. An image already under the target is left alone, and the "not much smaller than the original" check is skipped, because fitting is the point.
+- Measured on the 88 MB, 446-frame, 1912 px screen recording: 9.7 MB (509 x 319, every frame kept) in 8.5 s.
+- Room is left for the metadata you chose to keep; if it still would not fit, it is dropped and the result says so. The smallest target is 0.1 MB, and an image that can't get under the target even at 200 px (GIF: 120 px) fails with a message instead of writing a file that is too big.
+
 ## [1.3.0] — 2026-10-16
 
 ### Added

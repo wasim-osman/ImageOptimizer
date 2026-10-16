@@ -84,6 +84,13 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   data** (a re-encode would delete the depth map), and formats other than JPEG, PNG, GIF, HEIC and camera RAW
   (TIFF, WebP, AVIF). Forcing never overrides these.
 
+## Fit to size (for Discord and email)
+
+Pick **Fit to size** in Settings > Quality, set the target (10 MB by default) and drop an image. The app keeps
+the best quality that fits under the target and only shrinks the picture when quality alone can't. The 88 MB map
+recording above comes out at **9.7 MB** with every frame, in about 9 seconds. An image already under the target is
+left alone. Command line: `--mode fit --target-mb 10`.
+
 ## Modes
 
 | Mode | JPEG | PNG | HEIC | GIF |
@@ -133,7 +140,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  160 tests, against real files and the real encoders
+Tests/                  177 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 

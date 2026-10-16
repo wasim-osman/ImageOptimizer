@@ -16,6 +16,9 @@ public enum EncodeStep: Sendable, Equatable {
     /// GIF so its longer side fits (never enlarges); a screen recording is mostly pixels, so resolution is
     /// the only thing that makes it much smaller.
     case gifsicle(lossy: Int?, maxSide: Int?)
+    /// Search for the best quality (and, when quality alone can't, the largest resolution) that leaves the
+    /// file no bigger than `targetBytes`. Handles every format itself; see FitToSize.swift.
+    case fitToSize(targetBytes: Int64, lossyPNG: Bool = true)
 }
 
 public enum Refusal: Sendable, Equatable {
@@ -52,6 +55,9 @@ public struct ImagePlan: Sendable, Equatable {
     public var qualityNote: String
     /// Metadata groups to leave out of the result; the rest of the source's metadata is carried across.
     public var removeMetadata: Set<MetadataCategory> = MetadataCategory.defaultRemoved
+    /// Set for "Fit to size": the result must be no bigger than this. It is the point of the mode, so the
+    /// post-flight "not much smaller" check must not discard a result that makes it.
+    public var fitTargetBytes: Int64?
 }
 
 public struct EncodePlanner: Sendable {
@@ -64,6 +70,8 @@ public struct EncodePlanner: Sendable {
     public static let maximumMegapixels = 150.0
 
     public init() {}
+
+    static func megabytes(_ bytes: Int64) -> String { String(format: "%.1f MB", Double(bytes) / 1_000_000) }
 
     public func plan(info: ImageInfo, inputURL: URL, settings: Settings, forceEncode: Bool = false) -> ImagePlan {
         let outputURL = PathSupport.outputURL(
@@ -105,13 +113,27 @@ public struct EncodePlanner: Sendable {
             return refused(.outputExists("Skipped — \(outputURL.lastPathComponent) already exists."))
         }
 
-        // 3. Size guard. This is the one the user may override.
-        if !forceEncode, case .alreadyOptimised(let reason) = bloatGuard.preflight(info, mode: settings.encoderMode) {
+        // 3. Size guard. This is the one the user may override. "Fit to size" asks a different question: is it
+        // already small enough? (A RAW is always developed into a new JPEG, so it is never "already" anything.)
+        var mode = settings.encoderMode
+        if mode == .fitToSize {
+            let target = settings.targetBytes
+            if info.format != .raw, info.fileSize <= target {
+                if !forceEncode {
+                    return refused(.alreadyEfficient("Already under \(Self.megabytes(target)) (\(Self.megabytes(info.fileSize))), so there is nothing to fit."))
+                }
+                mode = .balanced   // "Convert Anyway" on a file that already fits: just optimise it
+            } else {
+                var plan = ImagePlan(inputURL: inputURL, outputURL: outputURL, outcome: .planned, steps: [.fitToSize(targetBytes: target, lossyPNG: settings.pngLossy)],
+                                     isLossless: false, qualityNote: "fit under \(Self.megabytes(target))", removeMetadata: settings.removeMetadata)
+                plan.fitTargetBytes = target
+                return plan
+            }
+        } else if !forceEncode, case .alreadyOptimised(let reason) = bloatGuard.preflight(info, mode: mode) {
             return refused(.alreadyEfficient(reason))
         }
 
         // 4. The ladder.
-        let mode = settings.encoderMode
         var steps: [EncodeStep]
         var lossless = false
         let note: String
@@ -128,13 +150,13 @@ public struct EncodePlanner: Sendable {
                 switch mode {
                 case .highQuality: distance = 0.3
                 case .balanced: distance = 0.7
-                case .smallest: distance = 1.7; chroma = "420"
+                case .smallest, .fitToSize: distance = 1.7; chroma = "420"
                 }
             } else {
                 switch mode {
                 case .highQuality: distance = 0.6
                 case .balanced: distance = 1.0
-                case .smallest: distance = 1.7; chroma = "420"
+                case .smallest, .fitToSize: distance = 1.7; chroma = "420"
                 }
             }
             steps = [.jpegli(distance: distance, chromaSubsampling: chroma)]
@@ -168,7 +190,7 @@ public struct EncodePlanner: Sendable {
             switch mode {
             case .highQuality: lossy = nil; cap = nil
             case .balanced: lossy = 10; cap = 1280
-            case .smallest: lossy = 40; cap = 960
+            case .smallest, .fitToSize: lossy = 40; cap = 960
             }
             let maxSide = cap.flatMap { max(info.displayWidth, info.displayHeight) > $0 ? $0 : nil }
             steps = [.gifsicle(lossy: lossy, maxSide: maxSide)]
@@ -179,7 +201,7 @@ public struct EncodePlanner: Sendable {
             switch mode {
             case .highQuality: quality = 0.85
             case .balanced: quality = 0.70
-            case .smallest: quality = 0.55
+            case .smallest, .fitToSize: quality = 0.55
             }
             steps = [.heic(quality: quality)]
             note = "HEIC quality \(quality)"

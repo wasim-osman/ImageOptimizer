@@ -269,3 +269,11 @@ removed) before the file is replaced. Any failure leaves the bare file. With the
 GPS was not recognised as location, every file came out bare instead of leaking: nothing was kept and nothing leaked.
 
 **Cost.** About 7 KB on a 1.1 MB iPhone JPEG (0.7%).
+
+## Fit to size (v1.4.0)
+
+- **Why resolution for GIF:** see v1.2.1: nothing but resolution shrinks a panning screen recording. GIF size follows roughly `side^1.7` (88 MB at 1912 px, 47 MB at 1280, 28.5 MB at 960), so each trial predicts the next side from the last result and the search closes in on the largest side that fits (a few trials; the exponent is re-measured from the last two points).
+- **88.2 MB recording to 10 MB:** 509 x 319, 9.7 MB, 446 frames, 8.5 s (every trial is chunked across the cores).
+- **JPEG / HEIC:** quality is bisected (jpegli distance 0.4 to 4.0, HEIC 0.2 to 0.85) at full size first; only if the worst quality still misses is the picture shrunk, and quality is then searched again at the new size to use the headroom.
+- **Metadata:** the search aims 2% (at most 100 KB) under the target so kept metadata (about 7 KB on a phone photo) doesn't push the file back over; if it still does, the metadata is dropped.
+- **Limit:** 1 MB = 1,000,000 bytes, so the result is under the same number of MiB too.

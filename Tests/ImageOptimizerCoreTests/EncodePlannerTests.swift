@@ -59,7 +59,8 @@ struct EncodePlannerTests {
 
     @Test("with lossy PNG switched off, a PNG is only ever recompressed losslessly")
     func losslessPNG() {
-        for mode in EncoderMode.allCases {
+        // "Fit to size" searches for its own result and has its own tests (FitToSizeTests).
+        for mode in EncoderMode.allCases where mode != .fitToSize {
             let p = plan(fat(.png)) { $0.pngLossy = false; $0.encoderMode = mode }
             #expect(p.steps == [.oxipng(level: 4)], "mode \(mode)")
             #expect(p.isLossless)

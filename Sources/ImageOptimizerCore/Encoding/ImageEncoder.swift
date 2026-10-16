@@ -74,6 +74,9 @@ public struct ImageEncoder: Sendable {
             case .heic(let quality):
                 try await runHEIC(input: plan.inputURL, output: destination, quality: quality, orientation: info.orientation)
                 current = destination
+            case .fitToSize(let target, let lossyPNG):
+                try await runFitToSize(target: target, lossyPNG: lossyPNG, info: info, input: plan.inputURL, output: destination, work: work, report: &report, onProgress: onProgress)
+                current = destination
             }
             onProgress?(Double(index + 1) / Double(plan.steps.count))
         }
@@ -85,8 +88,16 @@ public struct ImageEncoder: Sendable {
         // Put back whatever metadata the user chose to keep. GIF has none of this kind.
         if info.format != .gif {
             let (source, removing) = (plan.inputURL, plan.removeMetadata)
+            // Kept metadata adds bytes, which must not push a "fit to size" result back over its limit.
+            let bare = work.appendingPathComponent("bare.\(partURL.deletingPathExtension().pathExtension)")
+            if plan.fitTargetBytes != nil { try? FileManager.default.copyItem(at: partURL, to: bare) }
             let result = await Task.detached(priority: .utility) { MetadataFilter.apply(source: source, to: partURL, removing: removing) }.value
-            if let result, result.kept > 0 { report.notes.append("Kept \(result.kept) metadata fields; removed \(result.removed).") }
+            if let target = plan.fitTargetBytes, Self.fileBytes(partURL) > target, FileManager.default.fileExists(atPath: bare.path) {
+                _ = try? FileManager.default.replaceItemAt(partURL, withItemAt: bare)
+                report.notes.append("Metadata was left out to stay under the size limit.")
+            } else if let result, result.kept > 0 {
+                report.notes.append("Kept \(result.kept) metadata fields; removed \(result.removed).")
+            }
         }
         return report
     }
@@ -95,10 +106,14 @@ public struct ImageEncoder: Sendable {
 
     private func runJPEGLI(input: URL, info: ImageInfo, distance: Double, chroma: String?,
                            output: URL, work: URL) async throws {
-        guard let tool = ToolLocator.url(for: .cjpegli) else { throw EncodeError.toolMissing("cjpegli") }
         // Decoding is CPU-heavy; keep it off the cooperative pool so other jobs aren't starved.
         let pixels = try await Task.detached(priority: .utility) { try PixelExtractor.extract(url: input, info: info) }.value
         try Task.checkCancellation(or: EncodeError.cancelled)
+        try await encodeJPEGLI(pixels: pixels, distance: distance, chroma: chroma, output: output, work: work)
+    }
+
+    func encodeJPEGLI(pixels: DecodedPixels, distance: Double, chroma: String?, output: URL, work: URL) async throws {
+        guard let tool = ToolLocator.url(for: .cjpegli) else { throw EncodeError.toolMissing("cjpegli") }
 
         var args = ["-", output.path, "-d", String(format: "%.2f", distance), "-p", "2"]
         if let chroma { args += ["--chroma_subsampling=\(chroma)"] }
@@ -123,9 +138,9 @@ public struct ImageEncoder: Sendable {
 
     // MARK: - PNG (pngquant, oxipng)
 
-    private struct QuantResult { var produced: Bool; var note: String? }
+    struct QuantResult { var produced: Bool; var note: String? }
 
-    private func runPNGQuant(input: URL, output: URL, minQuality: Int, maxQuality: Int, speed: Int) async throws -> QuantResult {
+    func runPNGQuant(input: URL, output: URL, minQuality: Int, maxQuality: Int, speed: Int) async throws -> QuantResult {
         guard let tool = ToolLocator.url(for: .pngquant) else { throw EncodeError.toolMissing("pngquant") }
         let args = ["--quality", "\(minQuality)-\(maxQuality)", "--speed", "\(speed)", "--strip", "--force",
                     "--skip-if-larger", "--output", output.path, "--", input.path]
@@ -139,7 +154,7 @@ public struct ImageEncoder: Sendable {
         }
     }
 
-    private func runOxipng(input: URL, output: URL, level: Int) async throws {
+    func runOxipng(input: URL, output: URL, level: Int) async throws {
         guard let tool = ToolLocator.url(for: .oxipng) else { throw EncodeError.toolMissing("oxipng") }
         // `--strip safe` keeps the colour profile; `--strip all` would shift colours (measured).
         // `--force` writes even when the result isn't smaller, so the caller's guard decides.
@@ -151,7 +166,7 @@ public struct ImageEncoder: Sendable {
     // MARK: - GIF (gifsicle)
 
     /// Returns true when a lossy request fell back to a lossless result.
-    private func runGifsicle(input: URL, output: URL, lossy: Int?, maxSide: Int?, frames: Int, work: URL) async throws -> Bool {
+    func runGifsicle(input: URL, output: URL, lossy: Int?, maxSide: Int?, frames: Int, work: URL) async throws -> Bool {
         guard let tool = ToolLocator.url(for: .gifsicle) else { throw EncodeError.toolMissing("gifsicle") }
         // -O3 is the strongest frame-diffing and palette search. Comments and unknown extensions are
         // dropped (the "essentials only" metadata rule); frames, delays and the loop count are kept.
@@ -185,11 +200,11 @@ public struct ImageEncoder: Sendable {
 
     // MARK: - HEIC (Apple, in-process)
 
-    private func runHEIC(input: URL, output: URL, quality: Double, orientation: Int) async throws {
+    func runHEIC(input: URL, output: URL, quality: Double, orientation: Int, maxSide: Int? = nil) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .utility).async {
                 guard let source = CGImageSourceCreateWithURL(input as CFURL, nil),
-                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                      let image = Self.storedImage(source, maxSide: maxSide),
                       let dest = CGImageDestinationCreateWithURL(output as CFURL, UTType.heic.identifier as CFString, 1, nil) else {
                     continuation.resume(throwing: EncodeError.encodeFailed("couldn't open the HEIC"))
                     return
@@ -211,6 +226,18 @@ public struct ImageEncoder: Sendable {
                 }
             }
         }
+    }
+
+    /// The decoded STORED pixels (orientation not applied), shrunk to fit `maxSide` on the longer side when given.
+    static func storedImage(_ source: CGImageSource, maxSide: Int?) -> CGImage? {
+        guard let maxSide else { return CGImageSourceCreateImageAtIndex(source, 0, nil) }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: false,
+            kCGImageSourceThumbnailMaxPixelSize: maxSide,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
     // MARK: - Helpers
