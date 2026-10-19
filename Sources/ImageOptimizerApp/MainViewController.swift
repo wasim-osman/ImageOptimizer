@@ -19,6 +19,15 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     /// HDR refusals already put to the user, so each is asked about exactly once however often the
     /// poll timer sees it.
     private var promptedHDRJobIDs: Set<UUID> = []
+    /// "Apply to all remaining images" answers for the drop in progress, cleared when the drop is finished.
+    private var remembered = RememberedAnswers()
+    /// Distinct files dropped since the queue last went idle; the checkbox is only offered when there is more than one.
+    private var batchFiles: Set<URL> = []
+    /// Drops accepted but not yet handed to the queue. The drop isn't over (and its answers mustn't be forgotten)
+    /// until these have all landed, or an idle poll in the gap would reset the batch before its jobs exist.
+    private var dropsInFlight = 0
+    /// HDR questions being put to the user right now; the batch must outlive them.
+    private var hdrPromptsInFlight = 0
 
     init() {
         let settings = SettingsStore.shared.settings
@@ -67,7 +76,10 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     private func enqueue(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         hasAnnouncedDrain = false
+        batchFiles.formUnion(urls.map(\.standardizedFileURL))   // a drop can arrive twice; count each file once
+        dropsInFlight += 1
         Task { @MainActor in
+            defer { dropsInFlight -= 1 }
             await adoptPendingConcurrencyIfIdle()
             let all = await queue.snapshot()
             // One drop can arrive through BOTH the drag handler and application(_:openFiles:), so
@@ -80,8 +92,8 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
                 seen.insert(key)
                 if let refused = ForceConvert.shouldPromptToForce(url: url, among: all) {
                     let go = refused.state == .hdrLayer
-                        ? confirmHDRConvert(fileName: url.lastPathComponent, reason: refused.error)
-                        : confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error)
+                        ? decide(.hdr) { confirmHDRConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
+                        : decide(.force) { confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
                     guard go else { continue }
                     await queue.addJob(url: url, forceEncode: true)
                 } else {
@@ -92,15 +104,34 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
         }
     }
 
+    /// Asks `ask` unless the user already said "apply to all" to this question during this drop. `ask` is told
+    /// whether to offer the checkbox, and returns the answer and whether it was ticked.
+    private func decide(_ question: RememberedAnswers.Question, _ ask: (Bool) -> (answer: Bool, applyToAll: Bool)) -> Bool {
+        if let known = remembered.answer(for: question) { return known }
+        let result = ask(batchFiles.count > 1)
+        remembered.remember(result.answer, for: question, applyToAll: result.applyToAll)
+        return result.answer
+    }
+
+    /// Adds the "apply to all" checkbox (AppKit's suppression button) and reads it back after the alert closes.
+    private func run(_ alert: NSAlert, offerAll: Bool) -> (answer: Bool, applyToAll: Bool) {
+        if offerAll {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Apply to all remaining images in this drop"
+        }
+        let answer = alert.runModal() == .alertFirstButtonReturn
+        return (answer, offerAll && alert.suppressionButton?.state == .on)
+    }
+
     /// Asked as soon as an HDR photo is refused, so a drop never seems to do nothing.
-    private func confirmHDRConvert(fileName: String, reason: String) -> Bool {
+    private func confirmHDRConvert(fileName: String, reason: String, offerAll: Bool) -> (answer: Bool, applyToAll: Bool) {
         let alert = NSAlert()
         alert.messageText = "\"\(fileName)\" is an HDR photo"
         alert.informativeText = "\(reason)\n\nThe optimised copy is saved next to the original, which stays untouched."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Optimise Without HDR")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        return run(alert, offerAll: offerAll)
     }
 
     /// Puts each newly refused HDR photo to the user once.
@@ -108,9 +139,11 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
         let fresh = jobs.filter { $0.state == .hdrLayer && !promptedHDRJobIDs.contains($0.id) }
         guard !fresh.isEmpty else { return }
         fresh.forEach { promptedHDRJobIDs.insert($0.id) }
+        hdrPromptsInFlight += 1
         Task { @MainActor in
+            defer { hdrPromptsInFlight -= 1 }
             NSApp.activate(ignoringOtherApps: true)
-            for job in fresh where confirmHDRConvert(fileName: job.inputURL.lastPathComponent, reason: job.error) {
+            for job in fresh where decide(.hdr, { confirmHDRConvert(fileName: job.inputURL.lastPathComponent, reason: job.error, offerAll: $0) }) {
                 await queue.addJob(url: job.inputURL, forceEncode: true)
             }
             refresh()
@@ -118,7 +151,7 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     }
 
     /// "Convert Anyway?" after a file was already refused once by the size guard.
-    private func confirmForceConvert(fileName: String, reason: String) -> Bool {
+    private func confirmForceConvert(fileName: String, reason: String, offerAll: Bool) -> (answer: Bool, applyToAll: Bool) {
         let alert = NSAlert()
         alert.messageText = "Optimise \"\(fileName)\" anyway?"
         alert.informativeText = "\(reason)\n\nIt will still be processed, but it may not get smaller, "
@@ -126,7 +159,7 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Optimise Anyway")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        return run(alert, offerAll: offerAll)
     }
 
     /// `JobQueue` fixes its concurrency at init, so a changed setting takes effect on the next drop
@@ -190,6 +223,11 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     private func render(_ jobs: [Job]) {
         recordNewlySucceeded(jobs)
         promptForNewHDRRefusals(jobs)
+        // The drop is over once nothing is running and no HDR question is still waiting: forget its answers.
+        if dropsInFlight == 0, hdrPromptsInFlight == 0, !jobs.contains(where: \.isActive), !jobs.contains(where: { $0.state == .hdrLayer && !promptedHDRJobIDs.contains($0.id) }) {
+            remembered.reset()
+            batchFiles.removeAll()
+        }
         let active = jobs.filter(\.isActive)
         hasActiveJobs = !active.isEmpty
         dropZone.setStopButtonVisible(hasActiveJobs)

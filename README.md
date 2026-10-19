@@ -71,10 +71,10 @@ worth keeping for them. JPEG and PNG are where this app earns its keep.
   written with no metadata at all rather than risk leaking it. Keeping metadata makes a file a few KB larger.
 - **Never makes a file worse.** (Fit to size is the exception by design: it trades quality or resolution for the size you asked for, and always keeps the best quality that fits.) A source that's already efficient is refused, and a result that isn't
   meaningfully smaller is discarded and never written. Drop the same refused file again and it asks
-  **"Optimise anyway?"**.
+  **"Optimise anyway?"**. Dropping many at once? Tick **Apply to all remaining images** on the prompt to answer once.
 - **Asks before removing an HDR layer.** Most iPhone photos carry one. Re-encoding keeps how the photo
   looks in standard brightness but drops the extra HDR brightness, so the app asks first ("Optimise Without
-  HDR") rather than doing it silently.
+  HDR") rather than doing it silently (tick "Apply to all remaining images" to answer once for a whole drop).
 - **RAW is developed the way your Mac develops it.** It uses the same RAW engine as Preview and Photos, so the
   JPEG looks like what macOS shows for that file, with the camera's rotation applied once and wide-gamut
   (Display P3) colour kept and labelled. Its camera details are kept and the location removed, per the Metadata settings. The RAW is never
@@ -141,7 +141,7 @@ Sources/
   ImageOptimizerCore/   Probe (ImageIO), Planning (pure), Encoding (runner, queue), Models
   ImageOptimizerApp/    the AppKit window, Settings, menu
   ImageOptimizerCLI/    drives the whole core headlessly: ImageOptimizerCLI --plan photo.jpg
-Tests/                  177 tests, against real files and the real encoders
+Tests/                  181 tests, against real files and the real encoders
 scripts/                build-tools.sh, build-jpegli.sh, generate-app-icon.swift
 ```
 

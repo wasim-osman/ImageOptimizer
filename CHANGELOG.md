@@ -2,6 +2,11 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.1] — 2026-10-19
+
+### Added
+- **"Apply to all remaining images in this drop"** checkbox on the HDR prompt ("Optimise Without HDR") and the "Optimise anyway?" prompt, shown when more than one image was dropped. Tick it and your answer, Optimise or Cancel, is used for every other image that would ask the same question in that drop, so a folder of iPhone photos is one click, not one per photo. The two questions are independent, and the next drop asks again.
+
 ## [1.4.0] — 2026-10-16
 
 ### Added
