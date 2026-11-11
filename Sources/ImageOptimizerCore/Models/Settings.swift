@@ -43,6 +43,9 @@ public struct Settings: Sendable, Codable, Equatable {
     public var conflictPolicy: ResolveConflict = .overwrite
     /// Moves the original to the Trash after a successful conversion.
     public var deleteSource: Bool = false
+    /// Saves the optimised image over the original (same name, same folder) instead of beside it.
+    /// Never applies to a RAW file, which is developed into a new JPEG and never touched.
+    public var replaceOriginals: Bool = false
     public var preserveDates: Bool = true
     /// Images converted at once. 0 means automatic: one per CPU core. Every encoder here is single-threaded
     /// per file (gifsicle, cjpegli, pngquant), so parallel files are the only way to use more than one core.
@@ -71,6 +74,7 @@ public struct Settings: Sendable, Codable, Equatable {
         suffix = try c.decodeIfPresent(String.self, forKey: .suffix) ?? d.suffix
         conflictPolicy = try c.decodeIfPresent(ResolveConflict.self, forKey: .conflictPolicy) ?? d.conflictPolicy
         deleteSource = try c.decodeIfPresent(Bool.self, forKey: .deleteSource) ?? d.deleteSource
+        replaceOriginals = try c.decodeIfPresent(Bool.self, forKey: .replaceOriginals) ?? d.replaceOriginals
         preserveDates = try c.decodeIfPresent(Bool.self, forKey: .preserveDates) ?? d.preserveDates
         concurrency = try c.decodeIfPresent(Int.self, forKey: .concurrency) ?? d.concurrency
         removeMetadata = try c.decodeIfPresent(Set<MetadataCategory>.self, forKey: .removeMetadata) ?? d.removeMetadata

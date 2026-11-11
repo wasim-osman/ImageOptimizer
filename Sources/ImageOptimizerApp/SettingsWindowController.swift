@@ -23,6 +23,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let concurrency = NSStepper()
     private let concurrencyLabel = NSTextField(labelWithString: "Automatic")
     private let preserveDates = NSButton(checkboxWithTitle: "Keep the original file's dates", target: nil, action: nil)
+    private let replaceOriginals = NSButton(checkboxWithTitle: "Replace the original image instead of saving a copy (never RAW files)", target: nil, action: nil)
     private let deleteSource = NSButton(checkboxWithTitle: "Move the original to the Trash after optimising (never RAW files)", target: nil, action: nil)
 
     convenience init() {
@@ -95,7 +96,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         conflictPolicy.addItems(withTitles: ["Replace it", "Add a number", "Skip the image"])
         conflictPolicy.target = self
         conflictPolicy.action = #selector(commitFields)
-        return grid([("Save to:", outputLocation), ("", folderRow), ("Filename suffix:", suffixField), ("If a result exists:", conflictPolicy)])
+        return grid([("Originals:", replaceOriginals), ("Save to:", outputLocation), ("", folderRow), ("Filename suffix:", suffixField), ("If a result exists:", conflictPolicy)])
     }
 
     private func qualityTab() -> NSView {
@@ -200,6 +201,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         note.textColor = .tertiaryLabelColor
         preserveDates.target = self
         preserveDates.action = #selector(commitFields)
+        replaceOriginals.target = self
+        replaceOriginals.action = #selector(replaceOriginalsToggled)
         deleteSource.target = self
         deleteSource.action = #selector(deleteSourceToggled)
         return grid([("Images at once:", row), ("", note), ("", preserveDates), ("", deleteSource)])
@@ -251,6 +254,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         for (category, box) in metadataBoxes { box.state = s.removeMetadata.contains(category) ? .on : .off }
         preserveDates.state = s.preserveDates ? .on : .off
         deleteSource.state = s.deleteSource ? .on : .off
+        replaceOriginals.state = s.replaceOriginals ? .on : .off
         updateEnabledStates()
     }
 
@@ -268,6 +272,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             s.removeMetadata = Set(metadataBoxes.filter { $0.value.state == .on }.map(\.key))
             s.preserveDates = preserveDates.state == .on
             s.deleteSource = deleteSource.state == .on
+            s.replaceOriginals = replaceOriginals.state == .on
         }
         updateEnabledStates()
     }
@@ -292,6 +297,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         pngLossy.isEnabled = !high
         pngLossy.toolTip = high ? "Not used in High quality mode: PNGs are always recompressed pixel-for-pixel."
                                 : "Palette reduction makes PNGs much smaller with a near-identical result."
+        // Replacing in place makes the location, suffix, conflict and Trash options moot, so grey them out.
+        let replacing = store.settings.replaceOriginals
+        outputLocation.isEnabled = !replacing
+        suffixField.isEnabled = !replacing
+        conflictPolicy.isEnabled = !replacing
+        deleteSource.isEnabled = !replacing
         folderLabel.textColor = store.settings.outputLocation == .chooseFolder ? .secondaryLabelColor : .tertiaryLabelColor
     }
 
@@ -322,6 +333,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Destructive-ish, so it confirms once on enable. (It moves to the Trash, so it is recoverable.)
+    /// Overwrites files for good (no copy, no Trash), so ask once before turning it on.
+    @objc private func replaceOriginalsToggled() {
+        guard replaceOriginals.state == .on else { commitFields(); return }
+        let alert = NSAlert()
+        alert.messageText = "Replace your original images?"
+        alert.informativeText = "Each optimised image will be saved over the original, with the same name. The original is not kept or moved to the Trash, so this can't be undone. Images that can't be made smaller are left untouched, and RAW files are never replaced."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Replace Originals")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() != .alertFirstButtonReturn { replaceOriginals.state = .off }
+        commitFields()
+    }
+
     @objc private func deleteSourceToggled() {
         guard deleteSource.state == .on else { commitFields(); return }
         let alert = NSAlert()

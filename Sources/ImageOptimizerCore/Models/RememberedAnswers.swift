@@ -3,10 +3,10 @@
 import Foundation
 
 /// The yes/no answers the user chose to apply to every remaining image of the same question in the current drop.
-/// HDR ("optimise without the HDR layer?") and the size guard ("optimise anyway?") are separate questions, so
+/// HDR ("optimise without the HDR layer?"), Portrait ("without the depth data?") and the size guard ("optimise anyway?") are separate questions, so
 /// answering one for everything never answers the other.
 public struct RememberedAnswers: Sendable, Equatable {
-    public enum Question: Hashable, Sendable { case hdr, force }
+    public enum Question: Hashable, Sendable { case hdr, depth, force }
 
     private var answers: [Question: Bool] = [:]
 

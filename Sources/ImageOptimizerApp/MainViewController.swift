@@ -19,6 +19,8 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     /// HDR refusals already put to the user, so each is asked about exactly once however often the
     /// poll timer sees it.
     private var promptedHDRJobIDs: Set<UUID> = []
+    /// The same, for Portrait (depth data) refusals.
+    private var promptedDepthJobIDs: Set<UUID> = []
     /// "Apply to all remaining images" answers for the drop in progress, cleared when the drop is finished.
     private var remembered = RememberedAnswers()
     /// Distinct files dropped since the queue last went idle; the checkbox is only offered when there is more than one.
@@ -28,6 +30,8 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     private var dropsInFlight = 0
     /// HDR questions being put to the user right now; the batch must outlive them.
     private var hdrPromptsInFlight = 0
+    /// Portrait questions being put to the user right now; the batch must outlive them too.
+    private var depthPromptsInFlight = 0
 
     init() {
         let settings = SettingsStore.shared.settings
@@ -91,9 +95,15 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
                 guard !seen.contains(key) else { continue }
                 seen.insert(key)
                 if let refused = ForceConvert.shouldPromptToForce(url: url, among: all) {
-                    let go = refused.state == .hdrLayer
-                        ? decide(.hdr) { confirmHDRConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
-                        : decide(.force) { confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
+                    let go: Bool
+                    switch refused.state {
+                    case .hdrLayer:
+                        go = decide(.hdr) { confirmHDRConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
+                    case .depthData:
+                        go = decide(.depth) { confirmDepthConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
+                    default:
+                        go = decide(.force) { confirmForceConvert(fileName: url.lastPathComponent, reason: refused.error, offerAll: $0) }
+                    }
                     guard go else { continue }
                     await queue.addJob(url: url, forceEncode: true)
                 } else {
@@ -132,6 +142,34 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
         alert.addButton(withTitle: "Optimise Without HDR")
         alert.addButton(withTitle: "Cancel")
         return run(alert, offerAll: offerAll)
+    }
+
+    /// Asked as soon as a Portrait photo is refused, for the same reason.
+    private func confirmDepthConvert(fileName: String, reason: String, offerAll: Bool) -> (answer: Bool, applyToAll: Bool) {
+        let alert = NSAlert()
+        alert.messageText = "\"\(fileName)\" is a Portrait photo"
+        alert.informativeText = "\(reason)\n\nThe optimised copy is saved next to the original, which stays untouched."
+            + (SettingsStore.shared.settings.replaceOriginals ? " (With \"Replace originals\" on, the original is replaced instead, so the depth data is gone for good.)" : "")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Optimise Without Depth Data")
+        alert.addButton(withTitle: "Cancel")
+        return run(alert, offerAll: offerAll)
+    }
+
+    /// Puts each newly refused Portrait photo to the user once.
+    private func promptForNewDepthRefusals(_ jobs: [Job]) {
+        let fresh = jobs.filter { $0.state == .depthData && !promptedDepthJobIDs.contains($0.id) }
+        guard !fresh.isEmpty else { return }
+        fresh.forEach { promptedDepthJobIDs.insert($0.id) }
+        depthPromptsInFlight += 1
+        Task { @MainActor in
+            defer { depthPromptsInFlight -= 1 }
+            NSApp.activate(ignoringOtherApps: true)
+            for job in fresh where decide(.depth, { confirmDepthConvert(fileName: job.inputURL.lastPathComponent, reason: job.error, offerAll: $0) }) {
+                await queue.addJob(url: job.inputURL, forceEncode: true)
+            }
+            refresh()
+        }
     }
 
     /// Puts each newly refused HDR photo to the user once.
@@ -223,8 +261,9 @@ final class MainViewController: NSViewController, NSMenuItemValidation {
     private func render(_ jobs: [Job]) {
         recordNewlySucceeded(jobs)
         promptForNewHDRRefusals(jobs)
+        promptForNewDepthRefusals(jobs)
         // The drop is over once nothing is running and no HDR question is still waiting: forget its answers.
-        if dropsInFlight == 0, hdrPromptsInFlight == 0, !jobs.contains(where: \.isActive), !jobs.contains(where: { $0.state == .hdrLayer && !promptedHDRJobIDs.contains($0.id) }) {
+        if dropsInFlight == 0, hdrPromptsInFlight == 0, depthPromptsInFlight == 0, !jobs.contains(where: \.isActive), !jobs.contains(where: { $0.state == .hdrLayer && !promptedHDRJobIDs.contains($0.id) }), !jobs.contains(where: { $0.state == .depthData && !promptedDepthJobIDs.contains($0.id) }) {
             remembered.reset()
             batchFiles.removeAll()
         }

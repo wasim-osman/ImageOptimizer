@@ -38,6 +38,8 @@ enum OutputFinalizer {
                 : "The result was \(percent)% of the original, so nothing was written — this image was already efficient."
             return .discarded(message: message)
         }
+        // Read before the swap: when the output replaces the input, afterwards it would be the new file's dates.
+        let sourceAttrs = preserveDates ? (try? fm.attributesOfItem(atPath: inputURL.path)) : nil
         do {
             if fm.fileExists(atPath: outputURL.path) {
                 _ = try fm.replaceItemAt(outputURL, withItemAt: partURL)
@@ -48,7 +50,7 @@ enum OutputFinalizer {
             try? fm.removeItem(at: partURL)
             throw EncodeError.encodeFailed("couldn't save to \(outputURL.lastPathComponent): \(error.localizedDescription)")
         }
-        if preserveDates, let attrs = try? fm.attributesOfItem(atPath: inputURL.path) {
+        if let attrs = sourceAttrs {
             var carry: [FileAttributeKey: Any] = [:]
             if let created = attrs[.creationDate] { carry[.creationDate] = created }
             if let modified = attrs[.modificationDate] { carry[.modificationDate] = modified }

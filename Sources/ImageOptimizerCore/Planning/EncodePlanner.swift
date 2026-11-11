@@ -29,12 +29,15 @@ public enum Refusal: Sendable, Equatable {
     /// Has an HDR gain map that re-encoding would delete. The photo still looks right afterwards
     /// (in standard dynamic range), so the user may choose to go ahead.
     case hdrLayer(String)
+    /// Has a depth map (iPhone Portrait mode) that re-encoding would delete. The picture is unchanged,
+    /// but Photos can no longer edit the focus, so the user may choose to go ahead.
+    case depthData(String)
     /// The user's "skip if the output exists" policy found a result already there.
     case outputExists(String)
 
     public var reason: String {
         switch self {
-        case .alreadyEfficient(let r), .unsupported(let r), .hdrLayer(let r), .outputExists(let r): return r
+        case .alreadyEfficient(let r), .unsupported(let r), .hdrLayer(let r), .depthData(let r), .outputExists(let r): return r
         }
     }
 }
@@ -74,7 +77,8 @@ public struct EncodePlanner: Sendable {
     static func megabytes(_ bytes: Int64) -> String { String(format: "%.1f MB", Double(bytes) / 1_000_000) }
 
     public func plan(info: ImageInfo, inputURL: URL, settings: Settings, forceEncode: Bool = false) -> ImagePlan {
-        let outputURL = PathSupport.outputURL(
+        let replacing = settings.replaceOriginals && info.format != .raw
+        let outputURL = replacing ? inputURL : PathSupport.outputURL(
             inputURL: inputURL, suffix: settings.suffix,
             outputLocation: settings.outputLocation,
             chosenFolderPath: settings.chosenFolderPath,
@@ -95,11 +99,16 @@ public struct EncodePlanner: Sendable {
         }
         // A RAW file is never modified or replaced: the JPEG is a new file made from it, so an HDR
         // layer or depth map in the original is not "lost" and needs no confirmation.
-        if info.hasDepthData, info.format != .raw {
-            return refused(.unsupported("Portrait photos aren't supported yet — re-encoding would delete the depth data Photos uses for portrait editing."))
-        }
         if info.megapixels > Self.maximumMegapixels {
             return refused(.unsupported("This image is \(Int(info.megapixels)) megapixels — too large to process safely."))
+        }
+
+        // The depth map (Portrait mode) is dropped by any re-encode here. Not a safety problem, so the user
+        // decides: refused unless they have said to go ahead. (Going ahead also drops an HDR layer, so one
+        // answer covers both and the message says so.)
+        if info.hasDepthData, info.format != .raw, !forceEncode {
+            let hdr = info.hasGainMap ? " and the HDR layer" : ""
+            return refused(.depthData("This is a Portrait photo. Optimising it keeps the picture but removes the depth data\(hdr), so Photos can no longer change its focus or lighting."))
         }
 
         // The HDR gain map is dropped by any re-encode here. Not a safety problem, so the user
@@ -109,7 +118,7 @@ public struct EncodePlanner: Sendable {
         }
 
         // 2. "Skip if the output exists". Checked before the size guard so a skipped file says so.
-        if settings.conflictPolicy == .skip, FileManager.default.fileExists(atPath: outputURL.path) {
+        if settings.conflictPolicy == .skip, !replacing, FileManager.default.fileExists(atPath: outputURL.path) {
             return refused(.outputExists("Skipped — \(outputURL.lastPathComponent) already exists."))
         }
 

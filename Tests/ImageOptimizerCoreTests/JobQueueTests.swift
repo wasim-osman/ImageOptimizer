@@ -307,4 +307,22 @@ final class JobQueueTests {
         #expect(job.state == .alreadyOptimized)
         #expect(FileManager.default.fileExists(atPath: thin.path), "never delete an original that wasn't replaced")
     }
+
+    @Test("replace-originals saves the result over the original, with no copy and nothing trashed")
+    func replaceOriginalsOverwrites() async throws {
+        let src = try photo("replaceme-\(UUID().uuidString.prefix(6)).jpg")
+        let before = try #require(try FileManager.default.attributesOfItem(atPath: src.path)[.size] as? Int64)
+        var s = Settings(); s.replaceOriginals = true; s.deleteSource = true
+        let queue = JobQueue(settings: s)
+        let id = await queue.addJob(url: src)
+        let job = try #require(await waitUntilIdle(queue).first { $0.id == id })
+        #expect(job.state == .succeeded)
+        #expect(job.resultURL?.standardizedFileURL == src.standardizedFileURL)
+        let after = try #require(try FileManager.default.attributesOfItem(atPath: src.path)[.size] as? Int64)
+        #expect(after < before, "the file in place should now be the smaller one")
+        let dir = src.deletingLastPathComponent()
+        let siblings = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(!siblings.contains { $0.contains("_optimized") && $0.hasPrefix(String(src.lastPathComponent.prefix(10))) }, "no copy beside it")
+        #expect(!siblings.contains { $0.hasSuffix(".part") })
+    }
 }

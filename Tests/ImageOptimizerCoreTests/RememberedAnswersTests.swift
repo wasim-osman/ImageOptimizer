@@ -37,3 +37,13 @@ struct RememberedAnswersTests {
         #expect(r == RememberedAnswers() && r.answer(for: .hdr) == nil)
     }
 }
+
+@Suite("Remembered answers: portrait")
+struct RememberedDepthAnswerTests {
+    @Test("the Portrait answer is independent of the HDR and optimise-anyway answers")
+    func independent() {
+        var r = RememberedAnswers()
+        r.remember(true, for: .depth, applyToAll: true)
+        #expect(r.answer(for: .depth) == true && r.answer(for: .hdr) == nil && r.answer(for: .force) == nil)
+    }
+}

@@ -122,6 +122,9 @@ public actor JobQueue {
         case .refused(.unsupported(let reason)):
             update(id) { $0.state = .unsupported; $0.error = reason; $0.progress = 1 }
             finish(id); return
+        case .refused(.depthData(let reason)):
+            update(id) { $0.state = .depthData; $0.error = reason; $0.progress = 1 }
+            finish(id); return
         case .refused(.hdrLayer(let reason)):
             update(id) { $0.state = .hdrLayer; $0.error = reason; $0.progress = 1 }
             finish(id); return
@@ -159,7 +162,7 @@ public actor JobQueue {
                     $0.error = report.notes.joined(separator: " ")
                 }
                 // Never a RAW: it is the negative, and the JPEG made from it is lossy and cannot be developed again.
-                if settings.deleteSource, info.format != .raw { trash(job.inputURL) }
+                if settings.deleteSource, info.format != .raw, plan.outputURL.standardizedFileURL != job.inputURL.standardizedFileURL { trash(job.inputURL) }
             }
         } catch EncodeError.cancelled {
             try? FileManager.default.removeItem(at: partURL)

@@ -2,6 +2,12 @@
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.0] — 2026-11-11
+
+### Added
+- **Replace originals.** Settings > General has a new option that saves each optimised image over the original (same name, same folder) instead of beside it as a copy. It asks for confirmation when turned on, because the original isn't kept. Images that can't be made smaller are left untouched, RAW files are never replaced (they still become a separate JPEG), and the location, suffix, conflict and Trash options are greyed out while it is on. The original's dates are still preserved when that option is on.
+- **Portrait photos can now be optimised.** They used to be refused outright as "unsupported". Now they get a prompt like HDR photos do ("Optimise Without Depth Data"), with the same "apply to all remaining images" tick box. Saying yes keeps the picture but drops the depth data, so Photos can no longer change a Portrait's focus or lighting; the drop-zone summary counts them as "Portrait photos not optimised" until you do. One answer also covers the HDR layer on the same photo. RAW files are unaffected.
+
 ## [1.4.1] — 2026-10-19
 
 ### Added

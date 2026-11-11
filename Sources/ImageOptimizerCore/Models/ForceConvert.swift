@@ -13,7 +13,7 @@ public enum ForceConvert {
         guard let mostRecent = jobs.last(where: { $0.inputURL.standardizedFileURL == standardized }) else {
             return nil
         }
-        guard [.alreadyOptimized, .discardedAsBlob, .hdrLayer].contains(mostRecent.state) else { return nil }
+        guard [.alreadyOptimized, .discardedAsBlob, .hdrLayer, .depthData].contains(mostRecent.state) else { return nil }
         return mostRecent
     }
 }

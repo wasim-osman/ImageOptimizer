@@ -155,7 +155,7 @@ struct EncodePlannerTests {
 
     @Test("forcing never overrides a genuinely unsafe image, even one that also has an HDR layer")
     func forceStillRefusesUnsafe() {
-        for tweak in [{ (i: inout ImageInfo) in i.frameCount = 3 }, { (i: inout ImageInfo) in i.hasDepthData = true }] {
+        for tweak in [{ (i: inout ImageInfo) in i.frameCount = 3 }] {
             var info = fat(.heic) { $0.hasGainMap = true }
             tweak(&info)
             guard case .refused(.unsupported) = plan(info, force: true).outcome else {
@@ -211,15 +211,26 @@ struct EncodePlannerTests {
 
 @Suite("EncodePlanner: portrait depth")
 struct DepthRefusalTests {
-    @Test("a portrait (depth) photo is refused as unsupported, even when forced")
-    func depthRefused() {
+    private func plan(_ info: ImageInfo, force: Bool) -> ImagePlan {
+        EncodePlanner().plan(info: info, inputURL: URL(fileURLWithPath: "/tmp/p.heic"), settings: Settings(), forceEncode: force)
+    }
+
+    @Test("a portrait (depth) photo is refused with an overridable depth refusal, and proceeds once the user agrees")
+    func depthAsksFirst() {
         var info = ImageInfo(format: .heic, width: 4000, height: 3000, fileSize: 4_000_000)
         info.hasDepthData = true
-        for force in [false, true] {
-            let p = EncodePlanner().plan(info: info, inputURL: URL(fileURLWithPath: "/tmp/p.heic"), settings: Settings(), forceEncode: force)
-            guard case .refused(.unsupported(let why)) = p.outcome else { Issue.record("force=\(force): expected unsupported"); continue }
-            #expect(why.contains("depth"))
-        }
+        guard case .refused(.depthData(let why)) = plan(info, force: false).outcome else { Issue.record("expected depthData refusal"); return }
+        #expect(why.contains("depth") && !why.contains("HDR"))
+        #expect(plan(info, force: true).outcome == .planned)
+    }
+
+    @Test("a portrait photo that also has an HDR layer is asked about once, and says both are lost")
+    func depthAndHDR() {
+        var info = ImageInfo(format: .heic, width: 4000, height: 3000, fileSize: 4_000_000)
+        info.hasDepthData = true; info.hasGainMap = true
+        guard case .refused(.depthData(let why)) = plan(info, force: false).outcome else { Issue.record("expected depthData refusal"); return }
+        #expect(why.contains("HDR"))
+        #expect(plan(info, force: true).outcome == .planned, "one yes must cover both layers")
     }
 }
 

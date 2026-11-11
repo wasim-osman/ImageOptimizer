@@ -7,10 +7,11 @@ public enum IdleSummary {
         func count(_ states: JobState...) -> Int { jobs.filter { states.contains($0.state) }.count }
         var parts: [String] = []
         let succeeded = count(.succeeded), skipped = count(.alreadyOptimized, .discardedAsBlob)
-        let hdr = count(.hdrLayer), unsupported = count(.unsupported), skippedExisting = count(.skipped), cancelled = count(.cancelled), failed = count(.failed)
+        let hdr = count(.hdrLayer), depth = count(.depthData), unsupported = count(.unsupported), skippedExisting = count(.skipped), cancelled = count(.cancelled), failed = count(.failed)
         if succeeded > 0 { parts.append("\(succeeded) optimised") }
         if skipped > 0 { parts.append("\(skipped) already optimised") }
         if hdr > 0 { parts.append("\(hdr) HDR photo\(hdr == 1 ? "" : "s") not optimised") }
+        if depth > 0 { parts.append("\(depth) Portrait photo\(depth == 1 ? "" : "s") not optimised") }
         if unsupported > 0 { parts.append("\(unsupported) unsupported") }
         if skippedExisting > 0 { parts.append("\(skippedExisting) skipped") }
         if cancelled > 0 { parts.append("\(cancelled) stopped") }
@@ -32,7 +33,7 @@ public enum IdleSummary {
             return "\(formatBytes(before)) → \(formatBytes(after)) (\(text)) · click to show in Finder"
         }
         if let failed = jobs.last(where: { $0.state == .failed }), !failed.error.isEmpty { return failed.error }
-        if let skipped = jobs.last(where: { [.alreadyOptimized, .discardedAsBlob, .hdrLayer, .unsupported, .skipped].contains($0.state) }),
+        if let skipped = jobs.last(where: { [.alreadyOptimized, .discardedAsBlob, .hdrLayer, .depthData, .unsupported, .skipped].contains($0.state) }),
            !skipped.error.isEmpty {
             return skipped.error
         }

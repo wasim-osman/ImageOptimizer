@@ -20,6 +20,9 @@ public enum JobState: String, Sendable, Codable, Equatable {
     /// Refused because it has an HDR layer that optimising would remove. Unlike `.unsupported`
     /// the user may choose to go ahead.
     case hdrLayer
+    /// Refused because it has a Portrait-mode depth map that optimising would remove. The user may
+    /// choose to go ahead.
+    case depthData
     /// Not processed because the "if output exists: skip" policy found a result already there.
     case skipped
 }
