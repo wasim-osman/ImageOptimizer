@@ -5,6 +5,7 @@
 // reproduces.
 
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -316,9 +317,12 @@ extension Requirements {
     /// a hand-built DNG isn't accepted by Apple's reader), and photos can't be committed, so the end-to-end RAW
     /// tests use a file found on the machine and skip themselves when there is none. Point
     /// IMAGEOPTIMIZER_RAW_SAMPLE at a specific file to choose it. The smallest one found is used, to keep the suite quick.
+    /// Every candidate is checked to BE a RAW, not just to be named like one: photo-service exports contain
+    /// JPEGs called .dng, and picking one of those made the RAW tests fail instead of skip.
     static let rawSample: URL? = {
         if let path = ProcessInfo.processInfo.environment["IMAGEOPTIMIZER_RAW_SAMPLE"] {
-            return FileManager.default.fileExists(atPath: path) ? URL(fileURLWithPath: path) : nil
+            let url = URL(fileURLWithPath: path)
+            return isRealRAW(url) ? url : nil
         }
         let extensions: Set<String> = ["dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2"]
         var best: (url: URL, size: Int)?
@@ -334,12 +338,20 @@ extension Requirements {
                 if walker.level > 4 { walker.skipDescendants(); continue }
                 guard extensions.contains(url.pathExtension.lowercased()),
                       let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 100_000 else { continue }
-                if best == nil || size < best!.size { best = (url, size) }
+                if (best == nil || size < best!.size), isRealRAW(url) { best = (url, size) }
             }
         }
         return best?.url
     }()
     static let rawAvailable = rawSample != nil
+
+    /// True only when ImageIO calls the file a RAW and Apple's RAW decoder accepts it.
+    static func isRealRAW(_ url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let type = CGImageSourceGetType(source) as String?,
+              UTType(type)?.conforms(to: .rawImage) == true else { return false }
+        return CIRAWFilter(imageURL: url) != nil
+    }
 }
 
 extension Requirements {

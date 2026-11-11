@@ -204,3 +204,18 @@ final class RawEndToEndTests {
         #expect(!job.error.isEmpty)
     }
 }
+
+@Suite("RAW sample selection")
+final class RawSampleSelectionTests {
+    private let dir: URL
+    init() throws { dir = try Fixtures.makeDirectory() }
+    deinit { try? FileManager.default.removeItem(at: dir) }
+
+    @Test("a JPEG named .dng is not mistaken for a RAW")
+    func jpegCalledDngIsNotRAW() throws {
+        let jpeg = try Fixtures.write(Fixtures.photoLike(width: 800, height: 600, seed: 1), to: dir.appendingPathComponent("fake.jpg"), type: .jpeg, quality: 0.9)
+        let disguised = dir.appendingPathComponent("IMG_0001.dng")
+        try FileManager.default.moveItem(at: jpeg, to: disguised)
+        #expect(!Requirements.isRealRAW(disguised))
+    }
+}
